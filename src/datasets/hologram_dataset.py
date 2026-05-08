@@ -77,12 +77,15 @@ class HologramDataModule(pl.LightningDataModule):
 
         full_dataset = HologramDataset(valid_files, transform=self.transform)
 
-        # do train test split
-        train_size = int(0.8 * len(full_dataset))
-        val_size = len(full_dataset) - train_size
+        # three-way split (80% Train, 10% Val, 10% Test)
+        total_size = len(full_dataset)
+        train_size = int(0.8 * total_size)
+        val_size = int(0.1 * total_size)
+        test_size = total_size - train_size - val_size
+
         generator = torch.Generator().manual_seed(42)
-        self.train_dataset, self.val_dataset = random_split(
-            full_dataset, [train_size, val_size], generator=generator
+        self.train_dataset, self.val_dataset, self.test_dataset = random_split(
+            full_dataset, [train_size, val_size, test_size], generator=generator
         )
         self.setup_loaded = True
 
@@ -98,7 +101,7 @@ class HologramDataModule(pl.LightningDataModule):
 
     def test_dataloader(self):
         return DataLoader(
-            self.val_dataset,  # TODO: Threeway split!!!
+            self.test_dataset,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
