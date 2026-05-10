@@ -8,14 +8,14 @@ import hydra
 
 from experiments.abstract_experiment import AbstractExperiment
 from datasets.hologram_dataset import HologramDataModule
-from models.lightning_modules.random_mae import LitMaskedAutoencoder
+from models.lightning_modules.dinov3 import Dinov3Backbone
 from visualizations.mae_visualizations import visualize_mae_results
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
 
 
-class RandomMaeExperiment(AbstractExperiment):
+class DinoExperiment(AbstractExperiment):
     def __init__(
         self,
         checkpoint_dir: os.PathLike,
@@ -110,7 +110,7 @@ class RandomMaeExperiment(AbstractExperiment):
 
 
 @hydra.main(
-    version_base=None, config_path="../../conf/", config_name="random_mae_config"
+    version_base=None, config_path="../../conf/", config_name="dinov3_config"
 )
 def main(cfg: DictConfig):
     # setup logging
@@ -127,22 +127,18 @@ def main(cfg: DictConfig):
     )
     datamodule.setup()
     for variation in cfg.experiment.variations:
-        with mlflow.start_run(run_name="Random MAE Pipeline") as parent_run:
+        with mlflow.start_run(run_name="Dino v3 Pipeline") as parent_run:
             mlflow.log_params(variation.parameters)
-            experiment = RandomMaeExperiment(
+            experiment = DinoExperiment(
                 checkpoint_dir=os.path.join(variation.checkpoint_dir),
                 dataloader=datamodule,
                 mlflow_run_id=parent_run.info.run_id,
                 config=cfg,
                 model_settings=variation,
             )
-            experiment.train_model(
-                LitMaskedAutoencoder(
-                    img_size=datamodule.img_size, **variation.parameters.model
-                )
-            )
-            experiment.evaluate_model(LitMaskedAutoencoder)
-            experiment.generate_evaluation_visualization(LitMaskedAutoencoder)
+            experiment.train_model(Dinov3Backbone(**variation.parameters.model))
+            experiment.evaluate_model(Dinov3Backbone)
+            experiment.generate_evaluation_visualization(Dinov3Backbone)
 
 
 if __name__ == "__main__":

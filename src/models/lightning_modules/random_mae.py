@@ -54,9 +54,7 @@ class LitMaskedAutoencoder(pl.LightningModule):
         return x
 
     def unpatchify(self, patches: torch.Tensor) -> torch.Tensor:
-        """
-        Transforms a sequence of patches [B, Num_Patches, Patch_Size^2] back to an image [B, C, H, W].
-        """
+        """Transforms a sequence of patches [B, Num_Patches, Patch_Size^2] back to an image [B, C, H, W]."""
         p = self.patch_size
         h = w = self.grid_size
 
