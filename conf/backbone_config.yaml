@@ -1,0 +1,31 @@
+loglevel: INFO
+mlflow_uri: "sqlite:///mlflow.db"
+mlflow_log_system_metrics: true
+
+experiment:
+  batch_size: 4
+  data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
+  variations:
+      - name: "LitSimMIM Experiment"
+        checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae"
+        parameters:
+          model:
+            _target_: models.lightning_modules.sim_mim.LitSimMIM
+            patch_size: 64 # 16
+            embed_dim: 768
+            mask_ratio: 0.75
+            lr: 1.5e-4
+            warmup_ratio: 0.1
+          weight_decay: 0.05
+          num_epochs: 1
+      - name: "Dinov3 Experiment"
+        checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\dinov3"
+        parameters:
+          model:
+            _target_: models.lightning_modules.dinov3.Dinov3Backbone
+            patch_size: 64 # 16
+            mask_ratio: 0.75
+            lr: 1e-5
+            weight_decay: 0.05
+            warmup_ratio: 0.05
+          num_epochs: 1

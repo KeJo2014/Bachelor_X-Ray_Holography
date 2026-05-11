@@ -5,23 +5,26 @@ import torch.nn.functional as F
 import timm
 
 from typing import Tuple
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
 class Dinov3Backbone(pl.LightningModule):
     def __init__(
         self,
+        img_size: int = 960,
+        patch_size: int = 64,
         mask_ratio: float = 0.75,
         lr: float = 1.5e-4,
         weight_decay: float = 0.05,
+        warmup_ratio: float = 0.1,
     ):
         super().__init__()
         self.save_hyperparameters()
 
-        self.patch_size = 16
-        self.img_size = 960
+        self.patch_size = patch_size
         embed_dim = 768
         self.pixels_per_patch = self.patch_size * self.patch_size * 1
-        self.grid_size = self.img_size // self.patch_size
+        self.grid_size = img_size // self.patch_size
 
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.pixels_per_patch))
         torch.nn.init.normal_(self.mask_token, std=0.02)
@@ -102,7 +105,7 @@ class Dinov3Backbone(pl.LightningModule):
         preds, mask_1d, _, cropped_x = self(x)
         targets = self.patchify(cropped_x)
 
-        loss = F.l1_loss(preds[mask_1d], targets[mask_1d])
+        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
 
         self.log(
             f"{prefix}/loss",
@@ -128,4 +131,21 @@ class Dinov3Backbone(pl.LightningModule):
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
-        return optimizer
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = int(total_steps * self.hparams.warmup_ratio)
+
+        warmup = LinearLR(
+            optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_steps
+        )
+        cosine = CosineAnnealingLR(optimizer, T_max=(total_steps - warmup_steps))
+        scheduler = SequentialLR(
+            optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps]
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }

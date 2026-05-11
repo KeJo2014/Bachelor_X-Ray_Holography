@@ -17,11 +17,7 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
 
     with torch.no_grad():
         batch_x = batch_x.to(model.device)
-        model_response = model(batch_x)
-        if len(model_response) > 3:
-            preds, mask_1d, mask_img, _ = model_response
-        else:
-            preds, mask_1d, mask_img = model_response
+        preds, mask_1d, mask_img, _ = model(batch_x)
 
         # retransform prediction to 2d image
         pred_img = model.unpatchify(preds)

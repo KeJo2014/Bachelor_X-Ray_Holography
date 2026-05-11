@@ -8,14 +8,14 @@ import hydra
 
 from experiments.abstract_experiment import AbstractExperiment
 from datasets.hologram_dataset import HologramDataModule
-from models.lightning_modules.dinov3 import Dinov3Backbone
 from visualizations.mae_visualizations import visualize_mae_results
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
+from hydra.utils import instantiate
 
 
-class DinoExperiment(AbstractExperiment):
+class RandomSimMIMExperiment(AbstractExperiment):
     def __init__(
         self,
         checkpoint_dir: os.PathLike,
@@ -109,9 +109,7 @@ class DinoExperiment(AbstractExperiment):
         self.model = model_type.load_from_checkpoint(latest_checkpoint)
 
 
-@hydra.main(
-    version_base=None, config_path="../../conf/", config_name="dinov3_config"
-)
+@hydra.main(version_base=None, config_path="../../conf/", config_name="backbone_config")
 def main(cfg: DictConfig):
     # setup logging
     logging.basicConfig(level=cfg.loglevel, format="%(levelname)s: %(message)s")
@@ -127,18 +125,23 @@ def main(cfg: DictConfig):
     )
     datamodule.setup()
     for variation in cfg.experiment.variations:
-        with mlflow.start_run(run_name="Dino v3 Pipeline") as parent_run:
+        with mlflow.start_run(run_name="Random MAE Pipeline") as parent_run:
             mlflow.log_params(variation.parameters)
-            experiment = DinoExperiment(
+            experiment = RandomSimMIMExperiment(
                 checkpoint_dir=os.path.join(variation.checkpoint_dir),
                 dataloader=datamodule,
                 mlflow_run_id=parent_run.info.run_id,
                 config=cfg,
                 model_settings=variation,
             )
-            experiment.train_model(Dinov3Backbone(**variation.parameters.model))
-            experiment.evaluate_model(Dinov3Backbone)
-            experiment.generate_evaluation_visualization(Dinov3Backbone)
+            model = instantiate(
+                variation.parameters.model, img_size=datamodule.img_size
+            )
+            experiment.train_model(model)
+            experiment.evaluate_model(variation.parameters.model._target_)
+            experiment.generate_evaluation_visualization(
+                variation.parameters.model._target_
+            )
 
 
 if __name__ == "__main__":

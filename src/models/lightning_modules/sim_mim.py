@@ -5,9 +5,10 @@ import torch.nn.functional as F
 import timm
 
 from typing import Tuple
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
-class LitMaskedAutoencoder(pl.LightningModule):
+class LitSimMIM(pl.LightningModule):
     def __init__(
         self,
         img_size: int = 960,
@@ -16,6 +17,7 @@ class LitMaskedAutoencoder(pl.LightningModule):
         mask_ratio: float = 0.75,
         lr: float = 1.5e-4,
         weight_decay: float = 0.05,
+        warmup_ratio: float = 0.1,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -65,18 +67,18 @@ class LitMaskedAutoencoder(pl.LightningModule):
 
     def forward(
         self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         B = x.shape[0]
         patches = self.patchify(x)
 
         # generate mask
         rand_tensor = torch.rand(B, self.num_patches, device=x.device)
-        mask_1d = rand_tensor > self.hparams.mask_ratio
+        mask_1d = rand_tensor < self.hparams.mask_ratio
 
         # replace masked patches with learnable tokens
         mask_tokens = self.mask_token.expand(B, self.num_patches, -1)
         mask_bool = mask_1d.unsqueeze(-1)
-        patches_masked = torch.where(mask_bool, patches, mask_tokens)
+        patches_masked = torch.where(mask_bool, mask_tokens, patches)
 
         x_masked_img = self.unpatchify(patches_masked)
         mask_img = F.interpolate(
@@ -89,16 +91,16 @@ class LitMaskedAutoencoder(pl.LightningModule):
         patch_tokens = features[:, 1:, :]
         preds = self.decoder(patch_tokens)
 
-        return preds, mask_1d, mask_img
+        return preds, mask_1d, mask_img, x
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, _ = batch
-        preds, mask_1d, _ = self(x)
+        preds, mask_1d, _, _ = self(x)
         targets = self.patchify(x)
 
-        loss = F.l1_loss(preds[~mask_1d], targets[~mask_1d])
+        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
@@ -107,12 +109,21 @@ class LitMaskedAutoencoder(pl.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, _ = batch
-        preds, mask_1d, _ = self(x)
+        preds, mask_1d, _, _ = self(x)
         targets = self.patchify(x)
 
-        loss = F.l1_loss(preds[~mask_1d], targets[~mask_1d])
+        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
 
         self.log("test/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, _ = batch
+        preds, mask_1d, _, _ = self(x)
+        targets = self.patchify(x)
+
+        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
+        self.log("val/loss", loss, on_epoch=True, prog_bar=True)
         return loss
 
     def configure_optimizers(self):
@@ -121,20 +132,21 @@ class LitMaskedAutoencoder(pl.LightningModule):
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100)
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = int(total_steps * self.hparams.warmup_ratio)
+
+        warmup = LinearLR(
+            optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_steps
+        )
+        cosine = CosineAnnealingLR(optimizer, T_max=(total_steps - warmup_steps))
+        scheduler = SequentialLR(
+            optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps]
+        )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
                 "interval": "step",
+                "frequency": 1,
             },
         }
-
-    def validation_step(self, batch, batch_idx):
-        x, _ = batch
-        preds, mask_1d, _ = self(x)
-        targets = self.patchify(x)
-
-        loss = F.l1_loss(preds[~mask_1d], targets[~mask_1d])
-        self.log("val/loss", loss, on_epoch=True, prog_bar=True)
-        return loss
