@@ -84,8 +84,10 @@ class HologramDataModule(pl.LightningDataModule):
         test_size = total_size - train_size - val_size
 
         generator = torch.Generator().manual_seed(42)
-        self.train_dataset, self.val_dataset, self.test_dataset = random_split(
-            full_dataset, [train_size, val_size, test_size], generator=generator
+        self.train_dataset, self.val_dataset, self.test_dataset = (
+            random_split(  # TODO: not uncorrelated. Needs group shuffle
+                full_dataset, [train_size, val_size, test_size], generator=generator
+            )
         )
         self.setup_loaded = True
 
