@@ -23,7 +23,7 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
         pred_img = model.unpatchify(preds)
 
         # build final reconstruction and masked version
-        reconstruction = batch_x * mask_img + pred_img * (1 - mask_img)
+        reconstruction = pred_img * mask_img + batch_x * (1 - mask_img)
         masked_input = batch_x * (1 - mask_img)
 
     fig, axes = plt.subplots(num_images, 3, figsize=(10, 3 * num_images))
