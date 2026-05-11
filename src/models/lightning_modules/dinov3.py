@@ -18,8 +18,10 @@ class Dinov3Backbone(pl.LightningModule):
         self.save_hyperparameters()
 
         self.patch_size = 16
+        self.img_size = 960
         embed_dim = 768
         self.pixels_per_patch = self.patch_size * self.patch_size * 1
+        self.grid_size = self.img_size // self.patch_size
 
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.pixels_per_patch))
         torch.nn.init.normal_(self.mask_token, std=0.02)
@@ -42,17 +44,16 @@ class Dinov3Backbone(pl.LightningModule):
         """Disects 2d image [B, C, H, W] into 1d patches [B, Num_Patches, Patch_Size^2]."""
         b, c, h, w = imgs.shape
         p = self.patch_size
-        h_grid, w_grid = h // p, w // p
+        h_grid = w_grid = self.grid_size
 
         x = imgs.reshape(shape=(b, c, h_grid, p, w_grid, p))
         x = torch.einsum("nchpwq->nhwpqc", x)
         x = x.reshape(shape=(b, h_grid * w_grid, p**2 * c))
         return x
 
-    def unpatchify(
-        self, patches: torch.Tensor, h_grid: int, w_grid: int
-    ) -> torch.Tensor:
+    def unpatchify(self, patches: torch.Tensor) -> torch.Tensor:
         """Transforms a sequence of patches [B, Num_Patches, Patch_Size^2] back to an image [B, C, H, W]."""
+        h_grid = w_grid = self.grid_size
         b, _, d = patches.shape
         p = self.patch_size
         c = d // (p**2)
@@ -80,7 +81,7 @@ class Dinov3Backbone(pl.LightningModule):
         mask_bool = mask_1d.unsqueeze(-1)
         patches_masked = torch.where(mask_bool, mask_tokens, patches)
 
-        x_masked_img = self.unpatchify(patches_masked, h_grid, w_grid)
+        x_masked_img = self.unpatchify(patches_masked)
 
         mask_img = F.interpolate(
             mask_1d.view(b, 1, h_grid, w_grid).float(),
