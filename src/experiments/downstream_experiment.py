@@ -1,0 +1,123 @@
+import os
+import pytorch_lightning as pl
+import logging
+import mlflow
+import hydra
+import importlib
+
+from experiments.abstract_experiment import AbstractExperiment
+from datasets.hologram_dataset import HologramDataModule
+from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.loggers import MLFlowLogger
+from omegaconf import DictConfig
+from hydra.utils import instantiate
+
+logger = logging.getLogger(__name__)
+
+
+class DownstreamExperiment(AbstractExperiment):
+    def __init__(
+        self,
+        dataloader: pl.LightningDataModule,
+        mlflow_run_id: str,
+        config: DictConfig,
+    ):
+        super().__init__(
+            name=config.experiment.name,
+            dataloader=dataloader,
+            mlflow_run_id=mlflow_run_id,
+            config=config,
+        )
+        self.cfg = config.experiment
+        self.model = self._build_model()
+
+    def _get_class_from_string(self, class_path: str):
+        """Helper function to load python class according to path"""
+        module_name, class_name = class_path.rsplit(".", 1)
+        module = importlib.import_module(module_name)
+        return getattr(module, class_name)
+
+    def _build_model(self) -> pl.LightningModule:
+        logger.info(
+            f"Currently loading trained backbone from file: {self.cfg.backbone.checkpoint_path}"
+        )
+        backbone_class = self._get_class_from_string(self.cfg.backbone.module_class)
+        pretrained_model = backbone_class.load_from_checkpoint(
+            self.cfg.backbone.checkpoint_path
+        )
+        # extract encoder from model
+        encoder = pretrained_model.encoder
+
+        logger.info("Initializing new downstream head...")
+        head = instantiate(self.cfg.task.head)
+
+        # attach both
+        logger.info("Baue Task-Modul zusammen...")
+        task_module = instantiate(
+            self.cfg.task,
+            encoder=encoder,
+            head=head,
+            _recursive_=False,
+        )
+
+        return task_module
+
+    def run(self):
+        mlflow_logger = MLFlowLogger(
+            tracking_uri=self.config.mlflow_uri,
+            run_name=self.name,
+            run_id=self.mlflow_run_id,
+        )
+
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=os.path.join("checkpoints", "downstream"),
+            filename="task-{epoch:02d}-{val/mAP:.4f}",
+            monitor=self.cfg.trainer.monitor_metric,
+            mode="max",
+            save_top_k=1,
+        )
+
+        trainer = pl.Trainer(
+            max_epochs=self.cfg.trainer.max_epochs,
+            accelerator="auto",
+            devices=1,
+            logger=mlflow_logger,
+            callbacks=[checkpoint_callback],
+            precision="16-mixed",
+        )
+
+        logger.info("Starting downstream training...")
+        trainer.fit(self.model, datamodule=self.dataloader)
+
+        logger.info("Starting test evaluation...")
+        trainer.test(self.model, datamodule=self.dataloader, ckpt_path="best")
+
+
+@hydra.main(
+    version_base=None, config_path="../../conf/", config_name="downstream_config"
+)
+def main(cfg: DictConfig):
+    logging.basicConfig(level=cfg.loglevel, format="%(levelname)s: %(message)s")
+
+    mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
+    mlflow.set_experiment("X-Ray Holography")
+
+    datamodule = HologramDataModule(
+        data_dir=os.path.join(cfg.experiment.data_dir),
+        batch_size=cfg.experiment.batch_size,
+    )
+    datamodule.setup()
+
+    with mlflow.start_run(run_name=cfg.experiment.name) as run:
+        mlflow.log_param("freeze_encoder", cfg.experiment.task.freeze_encoder)
+
+        experiment = DownstreamExperiment(
+            dataloader=datamodule,
+            mlflow_run_id=run.info.run_id,
+            config=cfg,
+        )
+        experiment.run()
+
+
+if __name__ == "__main__":
+    main()

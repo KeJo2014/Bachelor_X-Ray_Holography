@@ -1,0 +1,57 @@
+loglevel: INFO
+mlflow_uri: "sqlite:///mlflow.db"
+mlflow_log_system_metrics: true
+
+# experiment:
+#   name: "Multi-Label Classification"
+#   data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
+#   batch_size: 8
+  
+#   backbone:
+#     module_class: "models.lightning_modules.sim_mim.LitSimMIM" 
+#     checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae\\mae-epoch=21-train_loss=0.0000.ckpt"
+  
+#   task:
+#     _target_: models.lightning_modules.classification_task.LitClassificationTask
+#     num_classes: 3 
+#     freeze_encoder: true
+#     lr: 1e-4
+#     warmup_ratio: 0.1
+#     weight_decay: 0.05
+    
+#     head:
+#       _target_: models.components.classification_head.ViTMultiLabelClassificationHead
+#       embed_dim: 768
+#       hidden_dim: 256
+#       num_classes: 3
+
+#   trainer:
+#     max_epochs: 20
+#     monitor="val/mAP"
+
+experiment:
+  name: "Segmentation"
+  data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
+  batch_size: 8
+  
+  backbone:
+    module_class: "models.lightning_modules.sim_mim.LitSimMIM" 
+    checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae\\mae-epoch=21-train_loss=0.0000.ckpt"
+
+  task:
+    _target_: models.lightning_modules.segmentation_task.LitSegmentationTask
+    freeze_encoder: true
+    lr: 1e-4
+    warmup_ratio: 0.1
+    weight_decay: 0.05
+    
+    head:
+      _target_: models.components.segmentation_head.ViTSegmentationHead
+      embed_dim: 768
+      num_classes: 1
+      img_size: 960
+      patch_size: 64
+
+  trainer:
+    max_epochs: 20
+    monitor_metric: "val/mean_IoU"

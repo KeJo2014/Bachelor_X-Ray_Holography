@@ -12,7 +12,7 @@ class LitSimMIM(pl.LightningModule):
     def __init__(
         self,
         img_size: int = 960,
-        patch_size: int = 64,
+        patch_size: int = 16,
         embed_dim: int = 768,
         mask_ratio: float = 0.75,
         lr: float = 1.5e-4,

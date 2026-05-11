@@ -43,8 +43,23 @@ class HologramDataset(Dataset):
 
         if self.transform:
             tensor = self.transform(tensor)
+        # DUMMY LABEL DATA
+        num_classes = 3
+        multi_hot_label = torch.zeros(num_classes, dtype=torch.float32)
+        active_classes = [0, 2]
+        for c in active_classes:
+            multi_hot_label[c] = 1.0
+        _, h, w = tensor.shape
+        Y, X = np.ogrid[:h, :w]
+        center_y, center_x = h / 2.0, w / 2.0
+        mask_np = ((X - center_x) ** 2 + (Y - center_y) ** 2) <= 27**2
+        mask_tensor = torch.from_numpy(mask_np).float().unsqueeze(0)
 
-        return tensor, 0  # TODO: return real label instead of 0
+        return (
+            tensor,
+            multi_hot_label,
+            mask_tensor,
+        )  # TODO: return real label instead of dummy tensor
 
 
 class HologramDataModule(pl.LightningDataModule):
