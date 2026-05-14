@@ -31,9 +31,9 @@ class RandomSimMIMExperiment(AbstractExperiment):
             name=model_settings.name,
             dataloader=dataloader,
             mlflow_run_id=mlflow_run_id,
+            checkpoint_dir = checkpoint_dir,
             config=config,
         )
-        self.checkpoint_dir = checkpoint_dir
         self.model_settings = model_settings
         self.model = None
 
@@ -89,24 +89,6 @@ class RandomSimMIMExperiment(AbstractExperiment):
             fig = visualize_mae_results(self.model, batch_x)
             mlflow.log_figure(fig, "visualizations/mae_reconstruction.png")
             plt.close(fig)
-
-    def _load_model_from_checkpoint(self, model_type: pl.LightningModule):
-        """
-        Loads newest checkpoint for provided model type.
-        """
-        search_path = os.path.join(self.checkpoint_dir, "*.ckpt")
-        checkpoint_files = glob.glob(search_path)
-
-        if not checkpoint_files:
-            logging.critical(
-                "No checkpoint file could be found for Random MAE model. Exiting."
-            )
-            raise FileNotFoundError(f"No model checkpoint found.")
-
-        latest_checkpoint = max(checkpoint_files, key=os.path.getmtime)
-        logging.info(f"Loading newst model checkpoint: {latest_checkpoint}")
-
-        self.model = model_type.load_from_checkpoint(latest_checkpoint)
 
 
 @hydra.main(version_base=None, config_path="../../conf/", config_name="backbone_config")

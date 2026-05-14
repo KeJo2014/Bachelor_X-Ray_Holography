@@ -2,7 +2,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torchmetrics import MetricCollection
-from torchmetrics.segmentation import MeanIoU, DiceScore
+from torchmetrics.classification import BinaryJaccardIndex, BinaryF1Score
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
@@ -28,7 +28,7 @@ class LitSegmentationTask(pl.LightningModule):
 
         # setup label calculation
         metrics = MetricCollection(
-            {"mean_IoU": MeanIoU(num_classes=1), "dice": DiceScore(num_classes=1)}
+            {"IoU": BinaryJaccardIndex(), "dice": BinaryF1Score()}
         )
 
         self.train_metrics = metrics.clone(prefix="train/")
@@ -56,12 +56,33 @@ class LitSegmentationTask(pl.LightningModule):
         logits = self.head(patch_tokens)
         return logits
 
+    def bce_dice_loss(
+        self, logits: torch.Tensor, targets: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Combines pixel_wise BCE loss with form-wise dice-loss.
+        Robust against imbalanced classes (tiny beamstop with vast background)
+        """
+        bce = F.binary_cross_entropy_with_logits(logits, targets)
+
+        # calculate dice loss
+        probs = torch.sigmoid(logits)
+        smooth = 1e-6
+        intersection = (probs * targets).sum()
+        dice_score = (2.0 * intersection + smooth) / (
+            probs.sum() + targets.sum() + smooth
+        )
+        dice_loss = 1.0 - dice_score
+
+        return dice_loss
+
     def _shared_step(self, batch, batch_idx, metrics_collection, prefix: str):
         x, _, y_mask = batch
         logits = self(x)
 
-        loss = F.binary_cross_entropy_with_logits(logits, y_mask)
-        metrics_collection.update(logits, y_mask)
+        loss = self.bce_dice_loss(logits, y_mask)
+        probs = torch.sigmoid(logits)
+        metrics_collection.update(probs, y_mask)
 
         self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss

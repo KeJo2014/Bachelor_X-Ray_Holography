@@ -5,6 +5,8 @@ mlflow_log_system_metrics: true
 # experiment:
 #   name: "Multi-Label Classification"
 #   data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
+#   checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae\\classification"
+
 #   batch_size: 8
   
 #   backbone:
@@ -27,11 +29,13 @@ mlflow_log_system_metrics: true
 
 #   trainer:
 #     max_epochs: 20
-#     monitor="val/mAP"
+#     monitor_metric: "val/f1_micro"
+#     monitor_mode: "max"
 
 experiment:
   name: "Segmentation"
   data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
+  checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae\\segmentation"
   batch_size: 8
   
   backbone:
@@ -54,4 +58,5 @@ experiment:
 
   trainer:
     max_epochs: 20
-    monitor_metric: "val/mean_IoU"
+    monitor_metric: "val/loss"
+    monitor_mode: "min"

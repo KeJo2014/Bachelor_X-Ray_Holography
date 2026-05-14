@@ -4,13 +4,16 @@ import logging
 import mlflow
 import hydra
 import importlib
+import torch
+import matplotlib.pyplot as plt
+import glob
 
 from experiments.abstract_experiment import AbstractExperiment
 from datasets.hologram_dataset import HologramDataModule
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
-from hydra.utils import instantiate
+from hydra.utils import instantiate, get_class
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ class DownstreamExperiment(AbstractExperiment):
             name=config.experiment.name,
             dataloader=dataloader,
             mlflow_run_id=mlflow_run_id,
+            checkpoint_dir=os.path.join(config.experiment.checkpoint_dir),
             config=config,
         )
         self.cfg = config.experiment
@@ -52,7 +56,7 @@ class DownstreamExperiment(AbstractExperiment):
         head = instantiate(self.cfg.task.head)
 
         # attach both
-        logger.info("Baue Task-Modul zusammen...")
+        logger.info("Creating task module...")
         task_module = instantiate(
             self.cfg.task,
             encoder=encoder,
@@ -69,12 +73,14 @@ class DownstreamExperiment(AbstractExperiment):
             run_id=self.mlflow_run_id,
         )
 
+        monitor_metric = self.cfg.trainer.monitor_metric
         checkpoint_callback = ModelCheckpoint(
-            dirpath=os.path.join("checkpoints", "downstream"),
-            filename="task-{epoch:02d}-{val/mAP:.4f}",
-            monitor=self.cfg.trainer.monitor_metric,
-            mode="max",
+            dirpath=self.checkpoint_dir,
+            filename=f"task-{{epoch:02d}}-{monitor_metric.replace('/', '_')}={{{monitor_metric}:.4f}}",
+            monitor=monitor_metric,
+            mode=self.cfg.trainer.monitor_mode,
             save_top_k=1,
+            auto_insert_metric_name=False,
         )
 
         trainer = pl.Trainer(
@@ -91,6 +97,48 @@ class DownstreamExperiment(AbstractExperiment):
 
         logger.info("Starting test evaluation...")
         trainer.test(self.model, datamodule=self.dataloader, ckpt_path="best")
+
+    def create_segmentation_visualizations(self):
+        from visualizations.segmentation_visualizations import (
+            visualize_segmentation_result,
+        )
+
+        self._load_model_from_checkpoint(model_type=self.model.__class__)
+        with mlflow.start_run(run_name="Visualization", nested=True) as run:
+            test_loader = self.dataloader.test_dataloader()
+            batch_x, _, true_mask = next(iter(test_loader))
+
+            x = batch_x.to(self.model.device)
+            with torch.no_grad():
+                logits = self.model(x)
+                probs = torch.sigmoid(logits)
+                predicted_mask = (probs > 0.5).float()
+
+            fig = visualize_segmentation_result(
+                batch_x[0, 0], true_mask[0, 0], predicted_mask.cpu()[0, 0]
+            )
+            mlflow.log_figure(fig, "visualizations/segmentation_result.png")
+            plt.close(fig)
+
+    def _load_model_from_checkpoint(self, model_type: pl.LightningModule):
+        """
+        Loads newest checkpoint for provided model type.
+        """
+        search_path = os.path.join(self.checkpoint_dir, "*.ckpt")
+        checkpoint_files = glob.glob(search_path)
+
+        if not checkpoint_files:
+            logger.critical(
+                "No checkpoint file could be found for Random MAE model. Exiting."
+            )
+            raise FileNotFoundError(f"No model checkpoint found.")
+
+        latest_checkpoint = max(checkpoint_files, key=os.path.getmtime)
+        logger.info(f"Loading newst model checkpoint: {latest_checkpoint}")
+
+        self.model = model_type.load_from_checkpoint(
+            latest_checkpoint, encoder=self.model.encoder, head=self.model.head
+        )
 
 
 @hydra.main(
@@ -117,6 +165,7 @@ def main(cfg: DictConfig):
             config=cfg,
         )
         experiment.run()
+        experiment.create_segmentation_visualizations()
 
 
 if __name__ == "__main__":

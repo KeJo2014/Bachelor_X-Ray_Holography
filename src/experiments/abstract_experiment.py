@@ -2,6 +2,8 @@ import mlflow
 import pytorch_lightning as pl
 import torch
 import logging
+import os
+import glob
 
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig
@@ -19,6 +21,7 @@ class AbstractExperiment(ABC):
         name: str,
         dataloader: pl.LightningDataModule,
         mlflow_run_id: str,
+        checkpoint_dir: os.PathLike,
         config: DictConfig,
     ) -> None:
         """
@@ -32,6 +35,7 @@ class AbstractExperiment(ABC):
         self.name = name
         self.mlflow_run_id = mlflow_run_id
         self.config = config
+        self.checkpoint_dir = checkpoint_dir
 
         if config.mlflow_log_system_metrics:
             mlflow.enable_system_metrics_logging()
@@ -54,6 +58,24 @@ class AbstractExperiment(ABC):
                 )
         else:
             logging.info("No GPU detected.")
+
+    def _load_model_from_checkpoint(self, model_type: pl.LightningModule):
+        """
+        Loads newest checkpoint for provided model type.
+        """
+        search_path = os.path.join(self.checkpoint_dir, "*.ckpt")
+        checkpoint_files = glob.glob(search_path)
+
+        if not checkpoint_files:
+            logger.critical(
+                "No checkpoint file could be found for Random MAE model. Exiting."
+            )
+            raise FileNotFoundError(f"No model checkpoint found.")
+
+        latest_checkpoint = max(checkpoint_files, key=os.path.getmtime)
+        logger.info(f"Loading newst model checkpoint: {latest_checkpoint}")
+
+        self.model = model_type.load_from_checkpoint(latest_checkpoint)
 
     # @abstractmethod
     # def run_experiment(
