@@ -12,7 +12,7 @@ from visualizations.mae_visualizations import visualize_mae_results
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
-from hydra.utils import instantiate
+from hydra.utils import instantiate, get_class
 
 
 class RandomSimMIMExperiment(AbstractExperiment):
@@ -84,8 +84,8 @@ class RandomSimMIMExperiment(AbstractExperiment):
             self._load_model_from_checkpoint(model_type=model_type)
 
         with mlflow.start_run(run_name="Visualization", nested=True) as run:
-            test_loader = self.dataloader.val_dataloader()
-            batch_x, _ = next(iter(test_loader))
+            test_loader = self.dataloader.test_dataloader()
+            batch_x, _, _ = next(iter(test_loader))
             fig = visualize_mae_results(self.model, batch_x)
             mlflow.log_figure(fig, "visualizations/mae_reconstruction.png")
             plt.close(fig)
@@ -137,11 +137,10 @@ def main(cfg: DictConfig):
             model = instantiate(
                 variation.parameters.model, img_size=datamodule.img_size
             )
+            ModelClass = get_class(variation.parameters.model._target_)
             experiment.train_model(model)
-            experiment.evaluate_model(variation.parameters.model._target_)
-            experiment.generate_evaluation_visualization(
-                variation.parameters.model._target_
-            )
+            experiment.evaluate_model(ModelClass)
+            experiment.generate_evaluation_visualization(ModelClass)
 
 
 if __name__ == "__main__":

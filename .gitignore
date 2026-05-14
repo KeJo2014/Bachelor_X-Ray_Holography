@@ -219,3 +219,5 @@ __marimo__/
 
 # hydra logs
 src/outputs
+src/mlruns/*
+src/mlflow.db
