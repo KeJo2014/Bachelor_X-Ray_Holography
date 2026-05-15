@@ -51,7 +51,9 @@ class LitSegmentationTask(pl.LightningModule):
         else:
             features = self.encoder(x)
 
-        patch_tokens = features[:, 1:, :]
+        num_patches = self.head.grid_size**2
+        # remove all prefix token including CLS token
+        patch_tokens = features[:, -num_patches:, :]
 
         logits = self.head(patch_tokens)
         return logits
