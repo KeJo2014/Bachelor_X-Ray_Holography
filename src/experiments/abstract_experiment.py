@@ -37,7 +37,7 @@ class AbstractExperiment(ABC):
         self.config = config
         self.checkpoint_dir = checkpoint_dir
 
-        if config.mlflow_log_system_metrics:
+        if config.get("mlflow_log_system_metrics", False):
             mlflow.enable_system_metrics_logging()
 
         # create reproducibility

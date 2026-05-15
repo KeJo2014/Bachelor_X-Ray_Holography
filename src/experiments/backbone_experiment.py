@@ -31,7 +31,7 @@ class RandomSimMIMExperiment(AbstractExperiment):
             name=model_settings.name,
             dataloader=dataloader,
             mlflow_run_id=mlflow_run_id,
-            checkpoint_dir = checkpoint_dir,
+            checkpoint_dir=checkpoint_dir,
             config=config,
         )
         self.model_settings = model_settings
@@ -46,34 +46,31 @@ class RandomSimMIMExperiment(AbstractExperiment):
             save_top_k=3,
         )
 
-        # create mlflow
-        with mlflow.start_run(run_name="Training", nested=True) as child_run:
-            mlflow_logger = MLFlowLogger(
-                tracking_uri=self.config.mlflow_uri,
-                run_name="Training",
-                run_id=child_run.info.run_id,
-            )
+        mlflow_logger = MLFlowLogger(
+            tracking_uri=self.config.mlflow_uri,
+            run_name="Training",
+            run_id=self.mlflow_run_id,
+        )
 
-            trainer = pl.Trainer(
-                max_epochs=self.model_settings.parameters.num_epochs,
-                accelerator="auto",
-                devices=1,
-                logger=mlflow_logger,
-                callbacks=[checkpoint_callback],
-                precision="16-mixed",  # use half-precision
-            )
-            trainer.fit(model, datamodule=self.dataloader)
-            self.model = model
+        trainer = pl.Trainer(
+            max_epochs=self.model_settings.parameters.num_epochs,
+            accelerator="auto",
+            devices=1,
+            logger=mlflow_logger,
+            callbacks=[checkpoint_callback],
+            precision="16-mixed",  # use half-precision
+        )
+        trainer.fit(model, datamodule=self.dataloader)
+        self.model = model
 
     def evaluate_model(self, model_type: pl.LightningModule):
         if self.model == None:
             self._load_model_from_checkpoint(model_type=model_type)
 
-        with mlflow.start_run(run_name="Evaluation", nested=True) as child_run:
             mlflow_logger = MLFlowLogger(
                 tracking_uri=self.config.mlflow_uri,
                 run_name="Evaluation",
-                run_id=child_run.info.run_id,
+                run_id=self.mlflow_run_id,
             )
 
             trainer = pl.Trainer(accelerator="auto", devices=1, logger=mlflow_logger)
@@ -83,12 +80,11 @@ class RandomSimMIMExperiment(AbstractExperiment):
         if self.model == None:
             self._load_model_from_checkpoint(model_type=model_type)
 
-        with mlflow.start_run(run_name="Visualization", nested=True) as run:
-            test_loader = self.dataloader.test_dataloader()
-            batch_x, _, _ = next(iter(test_loader))
-            fig = visualize_mae_results(self.model, batch_x)
-            mlflow.log_figure(fig, "visualizations/mae_reconstruction.png")
-            plt.close(fig)
+        test_loader = self.dataloader.test_dataloader()
+        batch_x, _, _ = next(iter(test_loader))
+        fig = visualize_mae_results(self.model, batch_x)
+        mlflow.log_figure(fig, "visualizations/mae_reconstruction.png")
+        plt.close(fig)
 
 
 @hydra.main(version_base=None, config_path="../../conf/", config_name="backbone_config")
@@ -102,11 +98,11 @@ def main(cfg: DictConfig):
     mlflow.set_experiment("X-Ray Holography")
 
     datamodule = HologramDataModule(
-        data_dir=os.path.join(cfg.experiment.data_dir),
-        batch_size=cfg.experiment.batch_size,
+        data_dir=os.path.join(cfg.experiments.data_dir),
+        batch_size=cfg.experiments.batch_size,
     )
     datamodule.setup()
-    for variation in cfg.experiment.variations:
+    for variation in cfg.experiments.variations:
         with mlflow.start_run(run_name="Random MAE Pipeline") as parent_run:
             mlflow.log_params(variation.parameters)
             experiment = RandomSimMIMExperiment(

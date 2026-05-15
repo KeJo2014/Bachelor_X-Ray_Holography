@@ -36,8 +36,6 @@ class Dinov3Backbone(pl.LightningModule):
             in_chans=1,
             global_pool="",
         )
-        
-        self.encoder.get_intermediate_layers
 
         self.decoder = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),

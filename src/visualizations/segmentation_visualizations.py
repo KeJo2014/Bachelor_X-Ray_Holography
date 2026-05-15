@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 
+
 def visualize_segmentation_result(x, true_mask, predicted_mask):
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     axes[0].imshow(x, cmap="gray")
