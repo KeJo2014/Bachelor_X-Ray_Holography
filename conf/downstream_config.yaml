@@ -22,7 +22,7 @@ experiments:
       weight_decay: 0.05
       
       head:
-        _target_: models.components.classification_head.ViTMultiLabelClassificationHead
+        _target_: models.heads.classification_head.ViTMultiLabelClassificationHead
         embed_dim: 768
         hidden_dim: 256
         num_classes: 3
@@ -35,10 +35,10 @@ experiments:
   - name: "Segmentation"
     checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae\\segmentation"
     visualization_type: "segmentation"
-    
+
     backbone:
-      module_class: "models.lightning_modules.backbones.mae.LitMAE" 
-      checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae\\mae-epoch=00-train_loss=0.0000.ckpt"
+      module_class: "models.lightning_modules.backbones.dinov3.Dinov3Backbone" 
+      checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\dinov3\\mae-epoch=49-train_loss=0.0000-v1.ckpt"
 
     task:
       _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
@@ -48,7 +48,7 @@ experiments:
       weight_decay: 0.05
       
       head:
-        _target_: models.components.segmentation_head.ViTSegmentationHead
+        _target_: models.heads.segmentation_head.ViTSegmentationHead
         embed_dim: 768
         num_classes: 1
         img_size: 960

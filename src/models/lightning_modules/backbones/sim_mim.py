@@ -6,11 +6,13 @@ import timm
 
 from typing import Tuple
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+from models.lightning_modules.pretext_tasks.pretext_task_action import PretextTaskAction
 
 
 class LitSimMIM(pl.LightningModule):
     def __init__(
         self,
+        pretext_strategy: PretextTaskAction,
         img_size: int = 960,
         patch_size: int = 16,
         embed_dim: int = 768,
@@ -22,6 +24,7 @@ class LitSimMIM(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        self.pretext_strategy = pretext_strategy
         self.patch_size = patch_size
         self.grid_size = img_size // patch_size
         self.num_patches = self.grid_size**2
@@ -71,9 +74,7 @@ class LitSimMIM(pl.LightningModule):
         B = x.shape[0]
         patches = self.patchify(x)
 
-        # generate mask
-        rand_tensor = torch.rand(B, self.num_patches, device=x.device)
-        mask_1d = rand_tensor < self.hparams.mask_ratio
+        mask_1d = self.pretext_strategy.generate_mask(B, self.num_patches, x.device)
 
         # replace masked patches with learnable tokens
         mask_tokens = self.mask_token.expand(B, self.num_patches, -1)
@@ -96,11 +97,11 @@ class LitSimMIM(pl.LightningModule):
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
-        x, _ = batch
+        x, _, _ = batch
         preds, mask_1d, _, _ = self(x)
         targets = self.patchify(x)
 
-        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
+        loss = self.pretext_strategy.compute_loss(preds, targets, mask_1d)
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
@@ -108,21 +109,21 @@ class LitSimMIM(pl.LightningModule):
     def test_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
-        x, _ = batch
+        x, _, _ = batch
         preds, mask_1d, _, _ = self(x)
         targets = self.patchify(x)
 
-        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
+        loss = self.pretext_strategy.compute_loss(preds, targets, mask_1d)
 
         self.log("test/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, _ = batch
+        x, _, _ = batch
         preds, mask_1d, _, _ = self(x)
         targets = self.patchify(x)
 
-        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
+        loss = self.pretext_strategy.compute_loss(preds, targets, mask_1d)
         self.log("val/loss", loss, on_epoch=True, prog_bar=True)
         return loss
 

@@ -5,11 +5,13 @@ import timm
 
 from typing import Tuple
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+from models.lightning_modules.pretext_tasks.pretext_task_action import PretextTaskAction
 
 
 class LitMAE(pl.LightningModule):
     def __init__(
         self,
+        pretext_strategy: PretextTaskAction,
         img_size: int = 960,
         patch_size: int = 16,
         embed_dim: int = 768,
@@ -24,6 +26,7 @@ class LitMAE(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        self.pretext_strategy = pretext_strategy
         self.patch_size = patch_size
         self.grid_size = img_size // patch_size
         self.num_patches = self.grid_size**2
@@ -181,22 +184,13 @@ class LitMAE(pl.LightningModule):
 
         return pred, target, mask, x
 
-    def loss_fn(
-        self, pred: torch.Tensor, target: torch.Tensor, mask: torch.Tensor
-    ) -> torch.Tensor:
-        """MSE loss on masked patches"""
-        loss = (pred - target) ** 2
-        loss = loss.mean(dim=-1)
-
-        loss = (loss * mask).sum() / mask.sum()
-        return loss
-
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, label, dataset_mask = batch
-        pred, target, mask = self(x)
-        loss = self.loss_fn(pred, target, mask)
+        pred, target, mask, _ = self(x)
+        mask_1d = mask.bool()
+        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d)
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
@@ -205,8 +199,9 @@ class LitMAE(pl.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, label, dataset_mask = batch
-        pred, target, mask = self(x)
-        loss = self.loss_fn(pred, target, mask)
+        pred, target, mask, _ = self(x)
+        mask_1d = mask.bool()
+        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
@@ -215,8 +210,9 @@ class LitMAE(pl.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, label, dataset_mask = batch
-        pred, target, mask = self(x)
-        loss = self.loss_fn(pred, target, mask)
+        pred, target, mask, _ = self(x)
+        mask_1d = mask.bool()
+        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
