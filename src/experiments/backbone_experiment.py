@@ -12,7 +12,7 @@ from visualizations.mae_visualizations import visualize_mae_results
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
-from hydra.utils import instantiate
+from hydra.utils import instantiate, get_class
 
 
 class RandomSimMIMExperiment(AbstractExperiment):
@@ -31,9 +31,9 @@ class RandomSimMIMExperiment(AbstractExperiment):
             name=model_settings.name,
             dataloader=dataloader,
             mlflow_run_id=mlflow_run_id,
+            checkpoint_dir=checkpoint_dir,
             config=config,
         )
-        self.checkpoint_dir = checkpoint_dir
         self.model_settings = model_settings
         self.model = None
 
@@ -46,34 +46,31 @@ class RandomSimMIMExperiment(AbstractExperiment):
             save_top_k=3,
         )
 
-        # create mlflow
-        with mlflow.start_run(run_name="Training", nested=True) as child_run:
-            mlflow_logger = MLFlowLogger(
-                tracking_uri=self.config.mlflow_uri,
-                run_name="Training",
-                run_id=child_run.info.run_id,
-            )
+        mlflow_logger = MLFlowLogger(
+            tracking_uri=self.config.mlflow_uri,
+            run_name="Training",
+            run_id=self.mlflow_run_id,
+        )
 
-            trainer = pl.Trainer(
-                max_epochs=self.model_settings.parameters.num_epochs,
-                accelerator="auto",
-                devices=1,
-                logger=mlflow_logger,
-                callbacks=[checkpoint_callback],
-                precision="16-mixed",  # use half-precision
-            )
-            trainer.fit(model, datamodule=self.dataloader)
-            self.model = model
+        trainer = pl.Trainer(
+            max_epochs=self.model_settings.parameters.num_epochs,
+            accelerator="auto",
+            devices=1,
+            logger=mlflow_logger,
+            callbacks=[checkpoint_callback],
+            precision="16-mixed",  # use half-precision
+        )
+        trainer.fit(model, datamodule=self.dataloader)
+        self.model = model
 
     def evaluate_model(self, model_type: pl.LightningModule):
         if self.model == None:
             self._load_model_from_checkpoint(model_type=model_type)
 
-        with mlflow.start_run(run_name="Evaluation", nested=True) as child_run:
             mlflow_logger = MLFlowLogger(
                 tracking_uri=self.config.mlflow_uri,
                 run_name="Evaluation",
-                run_id=child_run.info.run_id,
+                run_id=self.mlflow_run_id,
             )
 
             trainer = pl.Trainer(accelerator="auto", devices=1, logger=mlflow_logger)
@@ -83,30 +80,11 @@ class RandomSimMIMExperiment(AbstractExperiment):
         if self.model == None:
             self._load_model_from_checkpoint(model_type=model_type)
 
-        with mlflow.start_run(run_name="Visualization", nested=True) as run:
-            test_loader = self.dataloader.val_dataloader()
-            batch_x, _ = next(iter(test_loader))
-            fig = visualize_mae_results(self.model, batch_x)
-            mlflow.log_figure(fig, "visualizations/mae_reconstruction.png")
-            plt.close(fig)
-
-    def _load_model_from_checkpoint(self, model_type: pl.LightningModule):
-        """
-        Loads newest checkpoint for provided model type.
-        """
-        search_path = os.path.join(self.checkpoint_dir, "*.ckpt")
-        checkpoint_files = glob.glob(search_path)
-
-        if not checkpoint_files:
-            logging.critical(
-                "No checkpoint file could be found for Random MAE model. Exiting."
-            )
-            raise FileNotFoundError(f"No model checkpoint found.")
-
-        latest_checkpoint = max(checkpoint_files, key=os.path.getmtime)
-        logging.info(f"Loading newst model checkpoint: {latest_checkpoint}")
-
-        self.model = model_type.load_from_checkpoint(latest_checkpoint)
+        test_loader = self.dataloader.test_dataloader()
+        batch_x, _, _ = next(iter(test_loader))
+        fig = visualize_mae_results(self.model, batch_x)
+        mlflow.log_figure(fig, "visualizations/mae_reconstruction.png")
+        plt.close(fig)
 
 
 @hydra.main(version_base=None, config_path="../../conf/", config_name="backbone_config")
@@ -120,11 +98,11 @@ def main(cfg: DictConfig):
     mlflow.set_experiment("X-Ray Holography")
 
     datamodule = HologramDataModule(
-        data_dir=os.path.join(cfg.experiment.data_dir),
-        batch_size=cfg.experiment.batch_size,
+        data_dir=os.path.join(cfg.experiments.data_dir),
+        batch_size=cfg.experiments.batch_size,
     )
     datamodule.setup()
-    for variation in cfg.experiment.variations:
+    for variation in cfg.experiments.variations:
         with mlflow.start_run(run_name="Random MAE Pipeline") as parent_run:
             mlflow.log_params(variation.parameters)
             experiment = RandomSimMIMExperiment(
@@ -137,11 +115,10 @@ def main(cfg: DictConfig):
             model = instantiate(
                 variation.parameters.model, img_size=datamodule.img_size
             )
+            ModelClass = get_class(variation.parameters.model._target_)
             experiment.train_model(model)
-            experiment.evaluate_model(variation.parameters.model._target_)
-            experiment.generate_evaluation_visualization(
-                variation.parameters.model._target_
-            )
+            experiment.evaluate_model(ModelClass)
+            experiment.generate_evaluation_visualization(ModelClass)
 
 
 if __name__ == "__main__":

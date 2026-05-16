@@ -17,10 +17,15 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
 
     with torch.no_grad():
         batch_x = batch_x.to(model.device)
-        preds, mask_1d, mask_img, _ = model(batch_x)
+        preds, _, mask_img, _ = model(batch_x)
 
         # retransform prediction to 2d image
         pred_img = model.unpatchify(preds)
+
+        # if necessary expand mask to patch size
+        if pred_img.size() != mask_img.size():
+            mask_expanded = mask_img.unsqueeze(-1).repeat(1, 1, model.pixels_per_patch)
+            mask_img = model.unpatchify(mask_expanded)
 
         # build final reconstruction and masked version
         reconstruction = pred_img * mask_img + batch_x * (1 - mask_img)
