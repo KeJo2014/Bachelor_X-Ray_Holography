@@ -1,0 +1,4 @@
+from .random_real_space_masking import RandomMaskingRealSpaceStrategy
+from .random_masking import RandomMaskingStrategy
+
+PRETEXT_STRATEGIES = [RandomMaskingRealSpaceStrategy, RandomMaskingStrategy]

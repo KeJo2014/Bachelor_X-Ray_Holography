@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import torch
+import numpy as np
 
 from pytorch_lightning import LightningModule
 
@@ -13,6 +14,7 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
     :param num_images: Optional input to specify the number of displayed instances.
     Must not be greater than batch size
     """
+    num_images = min(num_images, batch_x.shape[0])
     model.eval()
 
     with torch.no_grad():
@@ -31,14 +33,27 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
         reconstruction = pred_img * mask_img + batch_x * (1 - mask_img)
         masked_input = batch_x * (1 - mask_img)
 
-    fig, axes = plt.subplots(num_images, 3, figsize=(10, 3 * num_images))
+        # transform to real space
+        recon_shifted = torch.fft.ifftshift(reconstruction, dim=(-2, -1))
+        real_space_reconstruction = torch.fft.ifft2(
+            recon_shifted, dim=(-2, -1), norm="ortho"
+        )
+        real_space_reconstruction = torch.fft.fftshift(
+            real_space_reconstruction, dim=(-2, -1)
+        )
+
+    fig, axes = plt.subplots(num_images, 6, figsize=(18, 3.5 * num_images))
     if num_images == 1:
         axes = [axes]
 
-    for i in range(min(num_images, batch_x.shape[0])):
+    for i in range(num_images):
         orig_img = batch_x[i][0].cpu().numpy()
         mask_img_plot = masked_input[i][0].cpu().numpy()
         recon_img = reconstruction[i][0].cpu().numpy()
+
+        realspace_magnitude = real_space_reconstruction[i][0].abs().cpu().numpy()
+        real_part = real_space_reconstruction[i][0].real.cpu().numpy()
+        imag_part = real_space_reconstruction[i][0].imag.cpu().numpy()
 
         # original hologram
         axes[i][0].imshow(orig_img, cmap="gray", vmin=0, vmax=1)
@@ -47,13 +62,30 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
 
         # masked hologram
         axes[i][1].imshow(mask_img_plot, cmap="gray", vmin=0, vmax=1)
-        axes[i][1].set_title(f"Masked Input ({(model.hparams.mask_ratio*100):.0f}%)")
+        axes[i][1].set_title(f"Masked ({(model.hparams.mask_ratio*100):.0f}%)")
         axes[i][1].axis("off")
 
-        # reconstructed hologram
+        # reconstructed hologram fourier
         axes[i][2].imshow(recon_img, cmap="gray", vmin=0, vmax=1)
-        axes[i][2].set_title("Reconstruction")
+        axes[i][2].set_title("Fourier Space")
         axes[i][2].axis("off")
+
+        # real space magnitude
+        axes[i][3].imshow(realspace_magnitude, cmap="gray", vmin=0, vmax=1)
+        axes[i][3].set_title("Real Space Magnitude")
+        axes[i][3].axis("off")
+
+        # real space - Real part
+        vmax_real = np.percentile(np.abs(real_part), 99.0)
+        axes[i][4].imshow(real_part, cmap="RdBu", vmin=-vmax_real, vmax=vmax_real)
+        axes[i][4].set_title("Real Space (Real Part)")
+        axes[i][4].axis("off")
+
+        # real space - Imaginary part
+        vmax_imag = np.percentile(np.abs(imag_part), 99.0)
+        axes[i][5].imshow(imag_part, cmap="RdBu", vmin=-vmax_imag, vmax=vmax_imag)
+        axes[i][5].set_title("Real Space (Imaginary Part)")
+        axes[i][5].axis("off")
 
     plt.tight_layout()
     return fig

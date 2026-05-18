@@ -49,9 +49,13 @@ class RandomMaskingRealSpaceStrategy(PretextTaskAction):
             recon_shifted = torch.fft.ifftshift(reconstructed_img, dim=(-2, -1))
             target_shifted = torch.fft.ifftshift(target_img, dim=(-2, -1))
 
-            # apply IFFFT (Wird jetzt sicher in float32 ausgeführt)
-            recon_real_space = torch.fft.ifft2(recon_shifted, dim=(-2, -1), norm="ortho")
-            target_real_space = torch.fft.ifft2(target_shifted, dim=(-2, -1), norm="ortho")
+            # apply IFFFT
+            recon_real_space = torch.fft.ifft2(
+                recon_shifted, dim=(-2, -1), norm="ortho"
+            )
+            target_real_space = torch.fft.ifft2(
+                target_shifted, dim=(-2, -1), norm="ortho"
+            )
 
             # reverse frequency part shift
             recon_real_space = torch.fft.fftshift(recon_real_space, dim=(-2, -1))
