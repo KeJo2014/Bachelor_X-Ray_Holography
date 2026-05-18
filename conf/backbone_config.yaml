@@ -11,6 +11,11 @@ experiments:
         parameters:
           model:
             _target_: models.lightning_modules.backbones.sim_mim.LitSimMIM
+            pretext_strategy:
+              _target_: models.lightning_modules.pretext_tasks.random_real_space_masking.RandomMaskingRealSpaceStrategy
+              img_size: 960
+              patch_size: 16
+              mask_ratio: 0.75
             patch_size: 16
             embed_dim: 768
             mask_ratio: 0.75
@@ -23,6 +28,11 @@ experiments:
         parameters:
           model:
             _target_: models.lightning_modules.backbones.dinov3.Dinov3Backbone
+            pretext_strategy:
+              _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
+              img_size: 960
+              patch_size: 16
+              mask_ratio: 0.75
             patch_size: 16
             mask_ratio: 0.75
             lr: 1e-5
@@ -34,6 +44,11 @@ experiments:
         parameters:
           model:
             _target_: models.lightning_modules.backbones.mae.LitMAE
+            pretext_strategy:
+              _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
+              img_size: 960
+              patch_size: 16
+              mask_ratio: 0.75
             patch_size: 16
             embed_dim: 768
             decoder_embed_dim: 512

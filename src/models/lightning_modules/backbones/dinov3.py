@@ -6,11 +6,13 @@ import timm
 
 from typing import Tuple
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+from models.lightning_modules.pretext_tasks.pretext_task_action import PretextTaskAction
 
 
 class Dinov3Backbone(pl.LightningModule):
     def __init__(
         self,
+        pretext_strategy: PretextTaskAction,
         img_size: int = 960,
         patch_size: int = 16,
         mask_ratio: float = 0.75,
@@ -21,6 +23,7 @@ class Dinov3Backbone(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        self.pretext_strategy = pretext_strategy
         self.patch_size = patch_size
         embed_dim = 768
         self.pixels_per_patch = self.patch_size * self.patch_size * 1
@@ -75,9 +78,7 @@ class Dinov3Backbone(pl.LightningModule):
         num_patches = h_grid * w_grid
         patches = self.patchify(x)
 
-        # generate mask
-        rand_tensor = torch.rand(b, num_patches, device=x.device)
-        mask_1d = rand_tensor < self.hparams.mask_ratio
+        mask_1d = self.pretext_strategy.generate_mask(b, num_patches, x.device)
 
         # replace masked patches with learnable tokens
         mask_tokens = self.mask_token.expand(b, num_patches, -1)
@@ -101,11 +102,11 @@ class Dinov3Backbone(pl.LightningModule):
     def _shared_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int, prefix: str
     ) -> torch.Tensor:
-        x, _ = batch
+        x, _, _ = batch
         preds, mask_1d, _, cropped_x = self(x)
         targets = self.patchify(cropped_x)
 
-        loss = F.mse_loss(preds[mask_1d], targets[mask_1d])
+        loss = self.pretext_strategy.compute_loss(preds, targets, mask_1d)
 
         self.log(
             f"{prefix}/loss",

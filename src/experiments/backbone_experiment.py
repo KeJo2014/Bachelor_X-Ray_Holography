@@ -2,7 +2,6 @@ import os
 import pytorch_lightning as pl
 import logging
 import mlflow
-import glob
 import matplotlib.pyplot as plt
 import hydra
 
@@ -67,14 +66,14 @@ class RandomSimMIMExperiment(AbstractExperiment):
         if self.model == None:
             self._load_model_from_checkpoint(model_type=model_type)
 
-            mlflow_logger = MLFlowLogger(
-                tracking_uri=self.config.mlflow_uri,
-                run_name="Evaluation",
-                run_id=self.mlflow_run_id,
-            )
+        mlflow_logger = MLFlowLogger(
+            tracking_uri=self.config.mlflow_uri,
+            run_name="Evaluation",
+            run_id=self.mlflow_run_id,
+        )
 
-            trainer = pl.Trainer(accelerator="auto", devices=1, logger=mlflow_logger)
-            trainer.test(self.model, datamodule=self.dataloader)
+        trainer = pl.Trainer(accelerator="auto", devices=1, logger=mlflow_logger)
+        trainer.test(self.model, datamodule=self.dataloader)
 
     def generate_evaluation_visualization(self, model_type: pl.LightningModule):
         if self.model == None:
@@ -103,7 +102,7 @@ def main(cfg: DictConfig):
     )
     datamodule.setup()
     for variation in cfg.experiments.variations:
-        with mlflow.start_run(run_name="Random MAE Pipeline") as parent_run:
+        with mlflow.start_run(run_name=variation.name) as parent_run:
             mlflow.log_params(variation.parameters)
             experiment = RandomSimMIMExperiment(
                 checkpoint_dir=os.path.join(variation.checkpoint_dir),

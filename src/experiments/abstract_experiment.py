@@ -6,9 +6,12 @@ import os
 import glob
 
 from abc import ABC, abstractmethod
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
+from models.lightning_modules.pretext_tasks import PRETEXT_STRATEGIES
 
 logger = logging.getLogger(__name__)
+
+torch.serialization.add_safe_globals(PRETEXT_STRATEGIES)
 
 
 class AbstractExperiment(ABC):
@@ -36,6 +39,8 @@ class AbstractExperiment(ABC):
         self.mlflow_run_id = mlflow_run_id
         self.config = config
         self.checkpoint_dir = checkpoint_dir
+
+        mlflow.log_text(OmegaConf.to_yaml(config, resolve=True), "config.yaml")
 
         if config.get("mlflow_log_system_metrics", False):
             mlflow.enable_system_metrics_logging()
