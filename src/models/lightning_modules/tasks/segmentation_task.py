@@ -45,6 +45,11 @@ class LitSegmentationTask(pl.LightningModule):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """extracts features"""
+
+        if hasattr(self.head, "needs_full_image") and self.head.needs_full_image:
+            logits = self.head(x)
+            return logits
+
         if self.hparams.freeze_encoder:
             with torch.no_grad():
                 features = self.encoder(x)

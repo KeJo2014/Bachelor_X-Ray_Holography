@@ -56,6 +56,9 @@ class DownstreamExperiment(AbstractExperiment):
         logger.info("Initializing new downstream head...")
         head = instantiate(self.cfg.task.head)
 
+        if hasattr(head, "inject_pretrained_encoder"):
+            head.inject_pretrained_encoder(encoder)
+
         # attach both
         logger.info("Creating task module...")
         task_module = instantiate(
