@@ -58,14 +58,10 @@ class LitSegmentationTask(pl.LightningModule):
         logits = self.head(patch_tokens)
         return logits
 
-    def bce_dice_loss(
-        self, logits: torch.Tensor, targets: torch.Tensor
-    ) -> torch.Tensor:
+    def dice_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         """
-        Combines pixel_wise BCE loss with form-wise dice-loss.
-        Robust against imbalanced classes (tiny beamstop with vast background)
+        Calculates Dice loss
         """
-        bce = F.binary_cross_entropy_with_logits(logits, targets)
 
         # calculate dice loss
         probs = torch.sigmoid(logits)
@@ -82,7 +78,7 @@ class LitSegmentationTask(pl.LightningModule):
         x, _, y_mask = batch
         logits = self(x)
 
-        loss = self.bce_dice_loss(logits, y_mask)
+        loss = self.dice_loss(logits, y_mask)
         probs = torch.sigmoid(logits)
         metrics_collection.update(probs, y_mask)
 
