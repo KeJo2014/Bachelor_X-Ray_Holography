@@ -5,6 +5,14 @@ import numpy as np
 from pytorch_lightning import LightningModule
 
 
+def _apply_inverse_fourier_transform(input_image: torch.Tensor) -> torch.Tensor:
+    recon_shifted = torch.fft.ifftshift(input_image, dim=(-2, -1))
+    real_space_reconstruction = torch.fft.ifft2(
+        recon_shifted, dim=(-2, -1), norm="ortho"
+    )
+    return torch.fft.fftshift(real_space_reconstruction, dim=(-2, -1))
+
+
 def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_images=3):
     """
     Plot original input, masked input and reconstructed version of input.
@@ -33,16 +41,11 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
         reconstruction = pred_img * mask_img + batch_x * (1 - mask_img)
         masked_input = batch_x * (1 - mask_img)
 
-        # transform to real space
-        recon_shifted = torch.fft.ifftshift(reconstruction, dim=(-2, -1))
-        real_space_reconstruction = torch.fft.ifft2(
-            recon_shifted, dim=(-2, -1), norm="ortho"
-        )
-        real_space_reconstruction = torch.fft.fftshift(
-            real_space_reconstruction, dim=(-2, -1)
-        )
+        # calculate real space versions
+        real_space_reconstruction = _apply_inverse_fourier_transform(reconstruction)
+        original_real_space_reconstruction = _apply_inverse_fourier_transform(batch_x)
 
-    fig, axes = plt.subplots(num_images, 6, figsize=(18, 3.5 * num_images))
+    fig, axes = plt.subplots(num_images, 8, figsize=(18, 4 * num_images))
     if num_images == 1:
         axes = [axes]
 
@@ -52,6 +55,10 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
         recon_img = reconstruction[i][0].cpu().numpy()
 
         realspace_magnitude = real_space_reconstruction[i][0].abs().cpu().numpy()
+        orig_realspace_magnitude = (
+            original_real_space_reconstruction[i][0].abs().cpu().numpy()
+        )
+        diff_magnitude = np.abs(orig_realspace_magnitude - realspace_magnitude)
         real_part = real_space_reconstruction[i][0].real.cpu().numpy()
         imag_part = real_space_reconstruction[i][0].imag.cpu().numpy()
 
@@ -70,22 +77,34 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
         axes[i][2].set_title("Fourier Space")
         axes[i][2].axis("off")
 
-        # real space magnitude
-        axes[i][3].imshow(realspace_magnitude, cmap="gray", vmin=0, vmax=1)
-        axes[i][3].set_title("Real Space Magnitude")
+        # original real space magnitude
+        axes[i][3].imshow(orig_realspace_magnitude, cmap="gray", vmin=0, vmax=1)
+        axes[i][3].set_title("Original Real Space Magnitude")
         axes[i][3].axis("off")
+
+        # real space magnitude
+        axes[i][4].imshow(realspace_magnitude, cmap="gray", vmin=0, vmax=1)
+        axes[i][4].set_title("Real Space Magnitude")
+        axes[i][4].axis("off")
+
+        # show difference image between original real space magnitude and reconstructed real space magnitude
+        vmax_diff = np.percentile(diff_magnitude, 99.0)
+        vmax_diff = vmax_diff if vmax_diff > 0 else 1e-5
+        axes[i][5].imshow(diff_magnitude, cmap="hot", vmin=0, vmax=vmax_diff)
+        axes[i][5].set_title("Difference Real Space Magnitude")
+        axes[i][5].axis("off")
 
         # real space - Real part
         vmax_real = np.percentile(np.abs(real_part), 99.0)
-        axes[i][4].imshow(real_part, cmap="RdBu", vmin=-vmax_real, vmax=vmax_real)
-        axes[i][4].set_title("Real Space (Real Part)")
-        axes[i][4].axis("off")
+        axes[i][6].imshow(real_part, cmap="RdBu", vmin=-vmax_real, vmax=vmax_real)
+        axes[i][6].set_title("Real Space (Real Part)")
+        axes[i][6].axis("off")
 
         # real space - Imaginary part
         vmax_imag = np.percentile(np.abs(imag_part), 99.0)
-        axes[i][5].imshow(imag_part, cmap="RdBu", vmin=-vmax_imag, vmax=vmax_imag)
-        axes[i][5].set_title("Real Space (Imaginary Part)")
-        axes[i][5].axis("off")
+        axes[i][7].imshow(imag_part, cmap="RdBu", vmin=-vmax_imag, vmax=vmax_imag)
+        axes[i][7].set_title("Real Space (Imaginary Part)")
+        axes[i][7].axis("off")
 
     plt.tight_layout()
     return fig
