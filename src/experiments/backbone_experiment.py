@@ -95,6 +95,8 @@ def main(cfg: DictConfig):
     # setup mlflow
     mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
     mlflow.set_experiment("X-Ray Holography")
+    if cfg.get("mlflow_log_system_metrics", False):
+        mlflow.enable_system_metrics_logging()
 
     datamodule = HologramDataModule(
         data_dir=os.path.join(cfg.experiments.data_dir),

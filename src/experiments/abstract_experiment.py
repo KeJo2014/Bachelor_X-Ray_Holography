@@ -42,9 +42,6 @@ class AbstractExperiment(ABC):
 
         mlflow.log_text(OmegaConf.to_yaml(config, resolve=True), "config.yaml")
 
-        if config.get("mlflow_log_system_metrics", False):
-            mlflow.enable_system_metrics_logging()
-
         # create reproducibility
         pl.seed_everything(42)
 

@@ -1,13 +1,8 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from torchmetrics import MetricCollection
-from torchmetrics.classification import (
-    MultilabelAveragePrecision,
-    MultilabelF1Score,
-    MultilabelHammingDistance,
-)
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+from metrics.multi_label_classification_metrics import get_metric_collection
 
 
 class LitClassificationTask(pl.LightningModule):
@@ -31,18 +26,7 @@ class LitClassificationTask(pl.LightningModule):
             for param in self.encoder.parameters():
                 param.requires_grad = False
 
-        # setup label calculation
-        metrics = MetricCollection(
-            {
-                "mAP": MultilabelAveragePrecision(
-                    num_labels=num_classes, average="macro"
-                ),
-                "f1_macro": MultilabelF1Score(num_labels=num_classes, average="macro"),
-                "f1_micro": MultilabelF1Score(num_labels=num_classes, average="micro"),
-                "hamming": MultilabelHammingDistance(num_labels=num_classes),
-            }
-        )
-
+        metrics = get_metric_collection(num_classes=num_classes)
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
@@ -73,7 +57,13 @@ class LitClassificationTask(pl.LightningModule):
         loss = F.binary_cross_entropy_with_logits(logits, y.float())
         metrics_collection.update(logits, y.long())
 
-        self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            f"{prefix}/loss",
+            loss,
+            on_step=(prefix == "train"),
+            on_epoch=True,
+            prog_bar=True,
+        )
         return loss
 
     def training_step(self, batch, batch_idx):

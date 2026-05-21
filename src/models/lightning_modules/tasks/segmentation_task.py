@@ -1,8 +1,7 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from torchmetrics import MetricCollection
-from torchmetrics.classification import BinaryJaccardIndex, BinaryF1Score
+from metrics.segmentation_metrics import get_metric_collection
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 
@@ -27,9 +26,7 @@ class LitSegmentationTask(pl.LightningModule):
                 param.requires_grad = False
 
         # setup label calculation
-        metrics = MetricCollection(
-            {"IoU": BinaryJaccardIndex(), "dice": BinaryF1Score()}
-        )
+        metrics = get_metric_collection()
 
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
@@ -87,7 +84,13 @@ class LitSegmentationTask(pl.LightningModule):
         probs = torch.sigmoid(logits)
         metrics_collection.update(probs, y_mask)
 
-        self.log(f"{prefix}/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            f"{prefix}/loss",
+            loss,
+            on_step=(prefix == "train"),
+            on_epoch=True,
+            prog_bar=True,
+        )
         return loss
 
     def training_step(self, batch, batch_idx):
