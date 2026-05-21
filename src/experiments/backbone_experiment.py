@@ -114,9 +114,7 @@ def main(cfg: DictConfig):
             config=cfg,
             model_settings=variation,
         )
-        model = instantiate(
-            variation.parameters.model, img_size=datamodule.img_size
-        )
+        model = instantiate(variation.parameters.model, img_size=datamodule.img_size)
         ModelClass = get_class(variation.parameters.model._target_)
         experiment.train_model(model)
 
