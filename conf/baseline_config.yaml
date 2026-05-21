@@ -1,8 +1,19 @@
 defaults:
   - models/baselines: resnet_50
   - override hydra/sweeper: optuna
+  - override hydra/launcher: submitit_slurm
 
 hydra:
+  launcher:
+    partition: main
+    timeout_min: 1440
+    cpus_per_task: 10
+    gpus_per_node: 1
+    tasks_per_node: 1
+    mem_gb: 64
+    nodes: 1
+    name: ${hydra.job.name}
+
   sweeper:
     sampler:
       _target_: optuna.samplers.TPESampler
