@@ -161,17 +161,18 @@ def main(cfg: DictConfig):
         batch_size=cfg.batch_size,
     )
     datamodule.setup()
-    for experiment in cfg.experiments:
-        with mlflow.start_run(run_name=experiment.name) as run:
-            mlflow.log_param("freeze_encoder", experiment.task.freeze_encoder)
+    experiment = cfg.models.downstream
+    with mlflow.start_run(run_name=experiment.name) as run:
+        mlflow.log_param("freeze_encoder", experiment.task.freeze_encoder)
 
-            downstream_experiment = DownstreamExperiment(
-                dataloader=datamodule,
-                mlflow_run_id=run.info.run_id,
-                experiment_config=experiment,
-                config=cfg,
-            )
-            downstream_experiment.train_and_evaluate()
+        downstream_experiment = DownstreamExperiment(
+            dataloader=datamodule,
+            mlflow_run_id=run.info.run_id,
+            experiment_config=experiment,
+            config=cfg,
+        )
+        downstream_experiment.train_and_evaluate()
+        if not cfg.get("hyperparameter_optimization_mode", False):
             if experiment.visualization_type == "segmentation":
                 downstream_experiment.create_segmentation_visualizations()
             elif experiment.visualization_type == "multi_label_classification":

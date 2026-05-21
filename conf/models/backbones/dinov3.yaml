@@ -1,0 +1,16 @@
+name: "Dinov3 Experiment"
+checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\dinov3"
+parameters:
+  model:
+    _target_: models.lightning_modules.backbones.dinov3.Dinov3Backbone
+    pretext_strategy:
+      _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
+      img_size: 960
+      patch_size: 16
+      mask_ratio: 0.75
+    patch_size: 16
+    mask_ratio: 0.75
+    lr: 1e-5
+    weight_decay: 0.05
+    warmup_ratio: 0.05
+  num_epochs: 1

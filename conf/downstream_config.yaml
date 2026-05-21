@@ -1,84 +1,27 @@
+defaults:
+  - models/downstream: segmentation_dpt
+  - override hydra/sweeper: optuna
+
+hydra:
+  sweeper:
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 42
+    direction: minimize
+    study_name: Downstream Hyperparameter Optimization
+    storage: "sqlite:///optuna.db"
+    n_trials: 20
+    n_jobs: 1
+    params:
+      models.downstream.task.lr: interval(1e-5, 5e-4)
+      models.downstream.task.weight_decay: interval(1e-4, 1e-1)
+      models.downstream.task.warmup_ratio: choice(0.05, 0.1, 0.2)
+
+
+
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
 data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
 batch_size: 1
-
-experiments:
-  - name: "Multi-Label Classification"
-    checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae\\classification"
-    visualization_type: "multi_label_classification"
-    
-    backbone:
-      module_class: "models.lightning_modules.backbones.mae.LitMAE" 
-      checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae\\mae-epoch=49-train_loss=0.0000.ckpt"
-    
-    task:
-      _target_: models.lightning_modules.tasks.classification_task.LitClassificationTask
-      num_classes: 3 
-      freeze_encoder: true
-      lr: 1e-4
-      warmup_ratio: 0.1
-      weight_decay: 0.05
-      
-      head:
-        _target_: models.heads.classification_head.ViTMultiLabelClassificationHead
-        embed_dim: 768
-        hidden_dim: 256
-        num_classes: 3
-
-    trainer:
-      max_epochs: 1
-      monitor_metric: "val/f1_micro"
-      monitor_mode: "max"
-
-  - name: "Segmentation"
-    checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae\\segmentation"
-    visualization_type: "segmentation"
-
-    backbone:
-      module_class: "models.lightning_modules.backbones.mae.LitMAE" 
-      checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae\\mae-epoch=49-train_loss=0.0000.ckpt"
-
-    task:
-      _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
-      freeze_encoder: true
-      lr: 1e-4
-      warmup_ratio: 0.1
-      weight_decay: 0.05
-      
-      head:
-        _target_: models.heads.segmentation_dpt_head.DPTSegmentationHead
-        encoder_name: "tu-vit_base_patch16_224" # or "tu-vit_base_patch16_dinov3.lvd1689m" for Dinov3
-
-    trainer:
-      max_epochs: 1
-      monitor_metric: "val/loss"
-      monitor_mode: "min"
-      
-  - name: "Segmentation"
-    checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae\\segmentation"
-    visualization_type: "segmentation"
-
-    backbone:
-      module_class: "models.lightning_modules.backbones.dinov3.Dinov3Backbone" 
-      checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\dinov3\\mae-epoch=49-train_loss=0.0000-v1.ckpt"
-
-    task:
-      _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
-      freeze_encoder: true
-      lr: 1e-4
-      warmup_ratio: 0.1
-      weight_decay: 0.05
-      
-      head:
-        _target_: models.heads.segmentation_head.ViTSegmentationHead
-        embed_dim: 768
-        num_classes: 1
-        img_size: 960
-        patch_size: 16
-
-    trainer:
-      max_epochs: 20
-      monitor_metric: "val/loss"
-      monitor_mode: "min"
+hyperparameter_optimization_mode: false

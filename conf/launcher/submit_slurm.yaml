@@ -1,0 +1,9 @@
+submitit_folder: ${hydra.sweep.dir}/.submitit/%j
+timeout_min: 1440
+cpus_per_task: 10
+gpus_per_node: 1
+tasks_per_node: 1
+mem_gb: 64
+nodes: 1
+name: ${hydra.job.name}
+partition: main

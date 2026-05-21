@@ -1,0 +1,23 @@
+name: "Segmentation"
+checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae\\segmentation"
+visualization_type: "segmentation"
+
+backbone:
+  module_class: "models.lightning_modules.backbones.mae.LitMAE" 
+  checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae\\mae-epoch=49-train_loss=0.0000.ckpt"
+
+task:
+  _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
+  freeze_encoder: true
+  lr: 1e-4
+  warmup_ratio: 0.1
+  weight_decay: 0.05
+  
+  head:
+    _target_: models.heads.segmentation_dpt_head.DPTSegmentationHead
+    encoder_name: "tu-vit_base_patch16_224" # or "tu-vit_base_patch16_dinov3.lvd1689m" for Dinov3
+
+trainer:
+  max_epochs: 1
+  monitor_metric: "val/loss"
+  monitor_mode: "min"

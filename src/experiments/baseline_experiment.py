@@ -122,15 +122,16 @@ def main(cfg: DictConfig):
         batch_size=cfg.batch_size,
     )
     datamodule.setup()
-    for experiment in cfg.experiments:
-        with mlflow.start_run(run_name=experiment.name) as run:
-            downstream_experiment = BaselineExperiment(
-                dataloader=datamodule,
-                mlflow_run_id=run.info.run_id,
-                experiment_config=experiment,
-                config=cfg,
-            )
-            downstream_experiment.train_and_evaluate()
+    experiment = cfg.models.baselines
+    with mlflow.start_run(run_name=experiment.name) as run:
+        downstream_experiment = BaselineExperiment(
+            dataloader=datamodule,
+            mlflow_run_id=run.info.run_id,
+            experiment_config=experiment,
+            config=cfg,
+        )
+        downstream_experiment.train_and_evaluate()
+        if not cfg.get("hyperparameter_optimization_mode", False):
             if experiment.visualization_type == "segmentation":
                 downstream_experiment.create_segmentation_visualizations()
             elif experiment.visualization_type == "multi_label_classification":

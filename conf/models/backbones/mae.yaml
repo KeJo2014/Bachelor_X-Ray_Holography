@@ -1,0 +1,20 @@
+name: "MAE Experiment"
+checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae"
+parameters:
+  model:
+    _target_: models.lightning_modules.backbones.mae.LitMAE
+    pretext_strategy:
+      _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
+      img_size: 960
+      patch_size: 16
+      mask_ratio: 0.75
+    patch_size: 16
+    embed_dim: 768
+    decoder_embed_dim: 512
+    decoder_depth: 8
+    decoder_num_heads: 16
+    mask_ratio: 0.75
+    lr: 1.5e-4
+    warmup_ratio: 0.1
+    weight_decay: 0.05
+  num_epochs: 1

@@ -1,61 +1,28 @@
+defaults:
+  - models/backbones: sim_mim
+  - override hydra/sweeper: optuna
+
+hydra:
+  sweeper:
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 42
+    direction: minimize
+    study_name: Backbone Hyperparameter Optimization
+    storage: "sqlite:///optuna.db"
+    n_trials: 20
+    n_jobs: 1
+    params:
+      models.backbones.parameters.model.lr: interval(1e-5, 5e-4)
+      models.backbones.parameters.model.weight_decay: interval(1e-4, 1e-1)
+      models.backbones.parameters.model.warmup_ratio: choice(0.05, 0.1, 0.2)
+
+
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
+hyperparameter_optimization_mode: false
 
 experiments:
   batch_size: 1
   data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
-  variations:
-      - name: "LitSimMIM Experiment"
-        checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae"
-        parameters:
-          model:
-            _target_: models.lightning_modules.backbones.sim_mim.LitSimMIM
-            pretext_strategy:
-              _target_: models.lightning_modules.pretext_tasks.random_real_space_masking.RandomMaskingRealSpaceStrategy
-              img_size: 960
-              patch_size: 16
-              mask_ratio: 0.75
-            patch_size: 16
-            embed_dim: 768
-            mask_ratio: 0.75
-            lr: 1.5e-4
-            warmup_ratio: 0.1
-          weight_decay: 0.05
-          num_epochs: 1
-      - name: "Dinov3 Experiment"
-        checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\dinov3"
-        parameters:
-          model:
-            _target_: models.lightning_modules.backbones.dinov3.Dinov3Backbone
-            pretext_strategy:
-              _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
-              img_size: 960
-              patch_size: 16
-              mask_ratio: 0.75
-            patch_size: 16
-            mask_ratio: 0.75
-            lr: 1e-5
-            weight_decay: 0.05
-            warmup_ratio: 0.05
-          num_epochs: 1
-      - name: "MAE Experiment"
-        checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae"
-        parameters:
-          model:
-            _target_: models.lightning_modules.backbones.mae.LitMAE
-            pretext_strategy:
-              _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
-              img_size: 960
-              patch_size: 16
-              mask_ratio: 0.75
-            patch_size: 16
-            embed_dim: 768
-            decoder_embed_dim: 512
-            decoder_depth: 8
-            decoder_num_heads: 16
-            mask_ratio: 0.75
-            lr: 1.5e-4
-            warmup_ratio: 0.1
-          weight_decay: 0.05
-          num_epochs: 1

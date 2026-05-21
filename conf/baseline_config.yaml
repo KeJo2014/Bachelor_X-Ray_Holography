@@ -1,36 +1,23 @@
+defaults:
+  - models/baselines: resnet_50
+  - override hydra/sweeper: optuna
+
+hydra:
+  sweeper:
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 42
+    direction: minimize
+    study_name: Baseline Hyperparameter Optimization
+    storage: "sqlite:///optuna.db"
+    n_trials: 20
+    n_jobs: 1
+    params:
+      models.baselines.model.lr: interval(1e-5, 5e-4)
+
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
 data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"
 batch_size: 1
-
-experiments:
-  - name: "ResNet-18 Classification Baseline"
-    checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\baselines\\resnet"
-    visualization_type: "multi_label_classification"
-    
-    model:
-      _target_: models.baselines.resnet50_baseline.LitResnetBaseline
-      num_classes: 3
-      lr: 0.001
-      pretrained: false
-
-    trainer:
-      max_epochs: 1
-      monitor_metric: "val/f1_micro"
-      monitor_mode: "max"
-
-  - name: "Unet Segmentation Baseline"
-    checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\baselines\\unet"
-    visualization_type: "segmentation"
-
-    model:
-      _target_: models.baselines.unet_baseline.LitUnetBaseline
-      lr: 0.001
-      encoder_name: "resnet34"
-      encoder_weights: "imagenet"
-
-    trainer:
-      max_epochs: 1
-      monitor_metric: "val/loss"
-      monitor_mode: "min"
+hyperparameter_optimization_mode: false

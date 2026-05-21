@@ -221,3 +221,7 @@ __marimo__/
 src/outputs
 src/mlruns/*
 src/mlflow.db
+
+# optuna logs
+src/multirun/*
+src/optuna.db

@@ -103,23 +103,33 @@ def main(cfg: DictConfig):
         batch_size=cfg.experiments.batch_size,
     )
     datamodule.setup()
-    for variation in cfg.experiments.variations:
-        with mlflow.start_run(run_name=variation.name) as parent_run:
-            mlflow.log_params(variation.parameters)
-            experiment = RandomSimMIMExperiment(
-                checkpoint_dir=os.path.join(variation.checkpoint_dir),
-                dataloader=datamodule,
-                mlflow_run_id=parent_run.info.run_id,
-                config=cfg,
-                model_settings=variation,
-            )
-            model = instantiate(
-                variation.parameters.model, img_size=datamodule.img_size
-            )
-            ModelClass = get_class(variation.parameters.model._target_)
-            experiment.train_model(model)
+    best_val_loss = float("inf")
+    variation = cfg.models.backbones
+    with mlflow.start_run(run_name=variation.name) as parent_run:
+        mlflow.log_params(variation.parameters)
+        experiment = RandomSimMIMExperiment(
+            checkpoint_dir=os.path.join(variation.checkpoint_dir),
+            dataloader=datamodule,
+            mlflow_run_id=parent_run.info.run_id,
+            config=cfg,
+            model_settings=variation,
+        )
+        model = instantiate(
+            variation.parameters.model, img_size=datamodule.img_size
+        )
+        ModelClass = get_class(variation.parameters.model._target_)
+        experiment.train_model(model)
+
+        # get validation loss for the optuna optimizer
+        current_val_loss = experiment.model.trainer.callback_metrics.get("val/loss")
+        if current_val_loss is not None:
+            best_val_loss = min(best_val_loss, current_val_loss.item())
+
+        if not cfg.get("hyperparameter_optimization_mode", False):
             experiment.evaluate_model(ModelClass)
             experiment.generate_evaluation_visualization(ModelClass)
+
+    return best_val_loss
 
 
 if __name__ == "__main__":
