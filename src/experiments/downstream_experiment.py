@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import glob
 
 from experiments.abstract_experiment import AbstractExperiment
-from datasets.hologram_dataset import HologramDataModule
+from datasets.abstract_dataset import AbstractDataset
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
@@ -156,9 +156,8 @@ def main(cfg: DictConfig):
     if cfg.get("mlflow_log_system_metrics", False):
         mlflow.enable_system_metrics_logging()
 
-    datamodule = HologramDataModule(
-        data_dir=os.path.join(cfg.data_dir),
-        batch_size=cfg.batch_size,
+    datamodule: AbstractDataset = instantiate(
+        cfg.datamodule, batch_size=cfg.experiments.batch_size
     )
     datamodule.setup()
     experiment = cfg.models.downstream

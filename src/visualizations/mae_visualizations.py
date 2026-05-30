@@ -45,7 +45,7 @@ def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_ima
         real_space_reconstruction = _apply_inverse_fourier_transform(reconstruction)
         original_real_space_reconstruction = _apply_inverse_fourier_transform(batch_x)
 
-    fig, axes = plt.subplots(num_images, 8, figsize=(18, 4 * num_images))
+    fig, axes = plt.subplots(num_images, 8, figsize=(25, 4 * num_images))
     if num_images == 1:
         axes = [axes]
 

@@ -2,9 +2,9 @@ import os
 import torch
 import numpy as np
 import logging
-from torch.utils.data import Dataset, DataLoader, random_split
 import torchvision.transforms as T
-import pytorch_lightning as pl
+from torch.utils.data import Dataset, DataLoader, random_split
+from datasets.abstract_dataset import AbstractDataset
 
 logger = logging.getLogger(__name__)
 
@@ -62,17 +62,16 @@ class HologramDataset(Dataset):
         )  # TODO: return real label instead of dummy tensor
 
 
-class HologramDataModule(pl.LightningDataModule):
+class HologramDataModule(AbstractDataset):
     def __init__(
         self,
         data_dir: str,
         batch_size: int = 32,
         num_workers: int = min(8, max(1, (os.cpu_count() or 1) - 1)),
     ):
-        super().__init__()
-        self.data_dir = data_dir
-        self.batch_size = batch_size
-        self.num_workers = num_workers
+        super().__init__(
+            data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
+        )
         self.img_size = 960
         self.setup_loaded = False
 

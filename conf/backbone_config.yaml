@@ -34,6 +34,9 @@ mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
 hyperparameter_optimization_mode: false
 
+datamodule: 
+  _target_: datasets.simulated_dataset.HologramDataModule
+  data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\simulation_sweep_1.h5"
+
 experiments:
   batch_size: 1
-  data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_Holo"

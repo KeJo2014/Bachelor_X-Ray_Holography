@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import hydra
 
 from experiments.abstract_experiment import AbstractExperiment
-from datasets.hologram_dataset import HologramDataModule
+from datasets.abstract_dataset import AbstractDataset
 from visualizations.mae_visualizations import visualize_mae_results
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
@@ -98,9 +98,8 @@ def main(cfg: DictConfig):
     if cfg.get("mlflow_log_system_metrics", False):
         mlflow.enable_system_metrics_logging()
 
-    datamodule = HologramDataModule(
-        data_dir=os.path.join(cfg.experiments.data_dir),
-        batch_size=cfg.experiments.batch_size,
+    datamodule: AbstractDataset = instantiate(
+        cfg.datamodule, batch_size=cfg.experiments.batch_size
     )
     datamodule.setup()
     best_val_loss = float("inf")
