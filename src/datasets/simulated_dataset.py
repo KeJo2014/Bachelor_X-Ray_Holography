@@ -82,7 +82,6 @@ class HologramDataset(Dataset):
 
         # Preprocess hologram
         holo = np.array(holo, dtype=np.float32)
-        holo = np.rot90(holo, k=1).copy()
         holo = np.clip(holo, 0, None)
         holo = np.log1p(holo)
 
