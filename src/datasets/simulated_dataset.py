@@ -39,8 +39,6 @@ class HologramDataset(Dataset):
         run_keys,
         label_map,
         transform=None,
-        global_mean=0.0,
-        global_std=1.0,
     ):
         """
         :param h5_filepath: path to the h5 data file
@@ -52,8 +50,6 @@ class HologramDataset(Dataset):
         self.run_keys = run_keys
         self.label_map = label_map
         self.transform = transform
-        self.global_mean = global_mean
-        self.global_std = global_std
         self.h5_file = None
 
     def open_hdf5(self):
@@ -90,7 +86,13 @@ class HologramDataset(Dataset):
         holo = np.clip(holo, 0, None)
         holo = np.log1p(holo)
 
-        holo = (holo - self.global_mean) / self.global_std
+        # normalize specific image
+        h_min = holo.min()
+        h_max = holo.max()
+        if h_max > h_min:
+            holo = (holo - h_min) / (h_max - h_min)
+        else:
+            holo = holo - h_min
 
         # convert to pytorch tensor with dim [1, H, W]
         tensor = torch.from_numpy(holo).float().unsqueeze(0)
@@ -121,41 +123,10 @@ class HologramDataModule(AbstractDataset):
         self.img_size = 960
         self.setup_loaded = False
         self.initial_crop_size = 1280
-        self.global_mean = 0.0
-        self.global_std = 1.0
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size, target_size=self.img_size
         )
-
-    def _compute_global_stats(self, data_file, train_keys):
-        """
-        Calculate iteratively global mean and std for training set.
-        """
-        logger.info("Computing global mean and std over training set...")
-        sum_val = 0.0
-        sq_sum_val = 0.0
-        pixel_count = 0
-
-        for key in train_keys:
-            for pol in ["CL", "CR"]:
-                holo = data_file[key][pol]["detected"][:]
-                holo = np.squeeze(holo)
-
-                holo = np.array(holo, dtype=np.float64)
-                holo = np.clip(holo, 0, None)
-                holo = np.log1p(holo)
-
-                sum_val += holo.sum()
-                sq_sum_val += (holo**2).sum()
-                pixel_count += holo.size
-
-        mean = sum_val / pixel_count
-        variance = (sq_sum_val / pixel_count) - (mean**2)
-        std = np.sqrt(max(variance, 1e-8))
-
-        logger.info(f"Global stats computed - Mean: {mean:.4f}, Std: {std:.4f}")
-        return float(mean), float(std)
 
     def setup(self, stage=None):
         if self.setup_loaded:
@@ -209,9 +180,6 @@ class HologramDataModule(AbstractDataset):
                 stratify=temp_labels,
                 random_state=42,
             )
-            self.global_mean, self.global_std = self._compute_global_stats(
-                f, train_keys
-            )
 
         # instantiate datasets
         self.train_dataset = HologramDataset(
@@ -219,24 +187,18 @@ class HologramDataModule(AbstractDataset):
             train_keys,
             label_map,
             transform=self.transform,
-            global_mean=self.global_mean,
-            global_std=self.global_std,
         )
         self.val_dataset = HologramDataset(
             self.data_dir,
             val_keys,
             label_map,
             transform=self.transform,
-            global_mean=self.global_mean,
-            global_std=self.global_std,
         )
         self.test_dataset = HologramDataset(
             self.data_dir,
             test_keys,
             label_map,
             transform=self.transform,
-            global_mean=self.global_mean,
-            global_std=self.global_std,
         )
 
         self.setup_loaded = True
