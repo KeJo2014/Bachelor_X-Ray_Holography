@@ -82,7 +82,7 @@ class LitSegmentationTask(pl.LightningModule):
 
         loss = self.dice_loss(logits, y_mask)
         probs = torch.sigmoid(logits)
-        metrics_collection.update(probs, y_mask)
+        metrics_collection.update(probs, (y_mask > 0.5).long())
 
         self.log(
             f"{prefix}/loss",
