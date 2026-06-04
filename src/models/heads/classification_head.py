@@ -8,7 +8,7 @@ class ViTMultiLabelClassificationHead(nn.Module):
             nn.Linear(embed_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
             nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.3),  # TODO: Hyperparam
             nn.Linear(hidden_dim, num_classes),
         )
 

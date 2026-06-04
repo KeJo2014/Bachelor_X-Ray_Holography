@@ -5,6 +5,7 @@ visualization_type: "segmentation"
 model:
   _target_: models.baselines.unet_baseline.LitUnetBaseline
   lr: 0.001
+  weight_decay: 0.01
   encoder_name: "resnet34"
   encoder_weights: "imagenet"
 

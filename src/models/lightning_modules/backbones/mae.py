@@ -222,7 +222,6 @@ class LitMAE(pl.LightningModule):
             self.parameters(),
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
-            betas=(0.9, 0.95),
         )
         total_steps = self.trainer.estimated_stepping_batches
         warmup_steps = int(total_steps * self.hparams.warmup_ratio)

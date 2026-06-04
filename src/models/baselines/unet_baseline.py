@@ -8,6 +8,7 @@ class LitUnetBaseline(pl.LightningModule):
     def __init__(
         self,
         lr: float = 1e-4,
+        weight_decay: float = 0.01,
         encoder_name: str = "resnet34",
         encoder_weights: str = "imagenet",
     ):
@@ -71,5 +72,9 @@ class LitUnetBaseline(pl.LightningModule):
         self.test_metrics.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
+        )
         return optimizer

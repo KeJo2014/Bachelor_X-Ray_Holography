@@ -117,9 +117,7 @@ def main(cfg: DictConfig):
     if cfg.get("mlflow_log_system_metrics", False):
         mlflow.enable_system_metrics_logging()
 
-    datamodule: AbstractDataset = instantiate(
-        cfg.datamodule, batch_size=cfg.batch_size
-    )
+    datamodule: AbstractDataset = instantiate(cfg.datamodule, batch_size=cfg.batch_size)
     datamodule.setup()
     experiment = cfg.models.baselines
     with mlflow.start_run(run_name=experiment.name) as run:

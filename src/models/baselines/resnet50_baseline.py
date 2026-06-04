@@ -10,6 +10,7 @@ class LitResnetBaseline(pl.LightningModule):
         self,
         num_classes: int = 3,
         lr: float = 1e-4,
+        weight_decay: float = 0.01,
         pretrained: bool = False,
     ):
         super().__init__()
@@ -68,5 +69,9 @@ class LitResnetBaseline(pl.LightningModule):
         self.test_metrics.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.lr)
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.weight_decay,
+        )
         return optimizer

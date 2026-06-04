@@ -101,7 +101,7 @@ class HologramDataset(Dataset):
         if self.transform:
             tensor, mask_tensor = self.transform(tensor, mask_tensor)
 
-        # generate oen-hot-tensor map
+        # generate one-hot-tensor map
         num_classes = len(self.label_map)
         label_tensor = torch.zeros(num_classes, dtype=torch.float32)
         label_tensor[self.label_map[label_val]] = 1.0
