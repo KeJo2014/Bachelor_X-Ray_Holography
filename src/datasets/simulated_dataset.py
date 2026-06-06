@@ -86,12 +86,12 @@ class HologramDataset(Dataset):
         holo = np.log1p(holo)
 
         # normalize specific image
-        h_min = holo.min()
-        h_max = holo.max()
-        if h_max > h_min:
-            holo = (holo - h_min) / (h_max - h_min)
+        h_mean = holo.mean()
+        h_std = holo.std()
+        if h_std > 1e-6:
+            holo = (holo - h_mean) / h_std
         else:
-            holo = holo - h_min
+            holo = holo - h_mean
 
         # convert to pytorch tensor with dim [1, H, W]
         tensor = torch.from_numpy(holo).float().unsqueeze(0)
@@ -121,7 +121,7 @@ class HologramDataModule(AbstractDataset):
         )
         self.img_size = 960
         self.setup_loaded = False
-        self.initial_crop_size = 1280
+        self.initial_crop_size = 1000
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size, target_size=self.img_size
