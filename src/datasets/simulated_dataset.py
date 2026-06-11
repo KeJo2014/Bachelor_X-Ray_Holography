@@ -86,12 +86,12 @@ class HologramDataset(Dataset):
         holo = np.log1p(holo)
 
         # normalize specific image
-        h_mean = holo.mean()
-        h_std = holo.std()
-        if h_std > 1e-6:
-            holo = (holo - h_mean) / h_std
+        h_min = holo.min()
+        h_max = holo.max()
+        if h_max > h_min:
+            holo = (holo - h_min) / (h_max - h_min)
         else:
-            holo = holo - h_mean
+            holo = holo - h_min
 
         # convert to pytorch tensor with dim [1, H, W]
         tensor = torch.from_numpy(holo).float().unsqueeze(0)
@@ -140,7 +140,7 @@ class HologramDataModule(AbstractDataset):
             all_labels = set()
             run_labels = []
             for key in run_keys:
-                lbl = data[key]["metadata"]["magnetic_pattern"]["pattern_type_method"][
+                lbl = data[key]["metadata"]["sample"]["magnetic_pattern"]["pattern_type_method"][
                     ()
                 ]
                 if isinstance(lbl, bytes):
