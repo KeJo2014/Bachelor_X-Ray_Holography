@@ -76,7 +76,7 @@ class HologramDataset(Dataset):
         holo = np.squeeze(holo)
         mask_np = np.squeeze(mask_np)
 
-        label_val = run_data["metadata"]["magnetic_pattern"]["pattern_type_method"][()]
+        label_val = run_data["metadata"]["sample"]["magnetic_pattern"]["pattern_type_method"][()]
         if isinstance(label_val, bytes):
             label_val = label_val.decode("utf-8")
 
