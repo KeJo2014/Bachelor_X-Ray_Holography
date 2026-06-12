@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import math
 import ast
+from tqdm import tqdm
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 # CONSTANTS
-DATA_DIR = r"C:\Users\kelle\Documents\storage\xray\master_dataset.h5"
+DATA_DIR = r"C:\Users\kelle\Documents\storage\xray\Raw_holo_sim\master_dataset.h5"
 VISUALIZATION_FILE_DESTINATION = (
     r"C:\Users\kelle\Documents\storage\xray\dataset_parameter_dist.png"
 )
@@ -69,7 +70,7 @@ logging.info(f"Reading file {DATA_DIR}...")
 with h5py.File(DATA_DIR, "r") as f:
     run_keys = [k for k in f.keys() if k != "_pipeline_config"]
 
-    for key in run_keys:
+    for key in tqdm(run_keys):
         run_group = f[key]
         row_data = {"run_id": key}
 
@@ -103,14 +104,14 @@ if "pattern_type" in df.columns:
 
 # VISUALIZATION
 sns.set_theme(style="whitegrid")
-
 num_features = len(FEATURES_TO_PLOT)
 cols = 3
 rows = math.ceil(num_features / cols)
-
 fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
 axes = axes.flatten()
-fig.suptitle("Overview Simulated Parameter Distributions", fontsize=16, fontweight="bold")
+fig.suptitle(
+    "Overview Simulated Parameter Distributions", fontsize=16, fontweight="bold"
+)
 
 for i, feature in enumerate(FEATURES_TO_PLOT):
     ax = axes[i]

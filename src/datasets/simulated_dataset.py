@@ -5,6 +5,7 @@ import logging
 import h5py
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
+import scipy.ndimage
 from torch.utils.data import Dataset, DataLoader
 from datasets.abstract_dataset import AbstractDataset
 from sklearn.model_selection import train_test_split
@@ -23,9 +24,24 @@ class CDICropAndBinTransform:
         self.target_size = (target_size, target_size)
 
     def __call__(self, image, mask):
-        image = TF.center_crop(image, output_size=[self.crop_size, self.crop_size])
-        mask = TF.center_crop(mask, output_size=[self.crop_size, self.crop_size])
+        image_np = image.squeeze(0).numpy()
 
+        # apply threshold to get brightest 1% of pixels -> halo around hologram center
+        threshold = np.percentile(image_np, 99.0)
+        bright_core = image_np > threshold
+
+        # calculate hologram center coordinates and calc crop coordinates
+        center_y, center_x = scipy.ndimage.center_of_mass(bright_core)
+        cy = int(round(center_y))
+        cx = int(round(center_x))
+        crop_h, crop_w = self.crop_size, self.crop_size
+        top = cy - (crop_h // 2)
+        left = cx - (crop_w // 2)
+
+        image = TF.crop(image, top, left, crop_h, crop_w)
+        mask = TF.crop(mask, top, left, crop_h, crop_w)
+
+        # apply adaptiv pooling
         image = F.adaptive_avg_pool2d(image, self.target_size)
         mask = F.adaptive_max_pool2d(mask, self.target_size)
 
@@ -76,7 +92,9 @@ class HologramDataset(Dataset):
         holo = np.squeeze(holo)
         mask_np = np.squeeze(mask_np)
 
-        label_val = run_data["metadata"]["sample"]["magnetic_pattern"]["pattern_type_method"][()]
+        label_val = run_data["metadata"]["sample"]["magnetic_pattern"][
+            "pattern_type_method"
+        ][()]
         if isinstance(label_val, bytes):
             label_val = label_val.decode("utf-8")
 
@@ -121,7 +139,7 @@ class HologramDataModule(AbstractDataset):
         )
         self.img_size = 960
         self.setup_loaded = False
-        self.initial_crop_size = 1000
+        self.initial_crop_size = 960
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size, target_size=self.img_size
@@ -140,9 +158,9 @@ class HologramDataModule(AbstractDataset):
             all_labels = set()
             run_labels = []
             for key in run_keys:
-                lbl = data[key]["metadata"]["sample"]["magnetic_pattern"]["pattern_type_method"][
-                    ()
-                ]
+                lbl = data[key]["metadata"]["sample"]["magnetic_pattern"][
+                    "pattern_type_method"
+                ][()]
                 if isinstance(lbl, bytes):
                     lbl = lbl.decode("utf-8")
                 all_labels.add(lbl)
@@ -231,3 +249,81 @@ class HologramDataModule(AbstractDataset):
             drop_last=True,
             persistent_workers=True,
         )
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    from matplotlib.widgets import Button
+
+    # Initialize data module
+    data_path = (
+        "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\master_dataset.h5"
+    )
+    data_module = HologramDataModule(data_path)
+    data_module.setup()
+    train_loader = data_module.train_dataloader()
+    inv_label_map = {v: k for k, v in data_module.train_dataset.label_map.items()}
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    plt.subplots_adjust(bottom=0.2)
+
+    class ViewerState:
+        def __init__(self, dataloader, inv_map):
+            self.dataloader = dataloader
+            self.data_iter = iter(self.dataloader)
+            self.inv_map = inv_map
+            self.current_batch = next(self.data_iter)
+            self.batch_idx = 0
+            self.batch_size = self.current_batch[0].shape[0]
+
+        def next_image(self, event):
+            self.batch_idx += 1
+            if self.batch_idx >= self.batch_size:
+                try:
+                    self.current_batch = next(self.data_iter)
+                    self.batch_idx = 0
+                    self.batch_size = self.current_batch[0].shape[0]
+                except StopIteration:
+                    self.data_iter = iter(self.dataloader)
+                    self.current_batch = next(self.data_iter)
+                    self.batch_idx = 0
+
+            self.update_plot()
+
+        def update_plot(self):
+            holo, label, mask = self.current_batch
+            idx = self.batch_idx
+            h = holo[idx].squeeze(0).numpy()
+            m = mask[idx].squeeze(0).numpy()
+
+            class_idx = torch.argmax(label[idx]).item()
+            class_name = self.inv_map[class_idx]
+
+            img1.set_data(h)
+            img1.set_clim(vmin=h.min(), vmax=h.max())
+            ax1.set_title(f"Hologram | Label: {class_name}")
+
+            img2.set_data(m)
+            ax2.set_title("Beamstop Mask")
+
+            fig.canvas.draw_idle()
+
+    viewer = ViewerState(train_loader, inv_label_map)
+    holo_init = viewer.current_batch[0][0].squeeze(0).numpy()
+    mask_init = viewer.current_batch[2][0].squeeze(0).numpy()
+    init_class = inv_label_map[torch.argmax(viewer.current_batch[1][0]).item()]
+
+    # initial images
+    img1 = ax1.imshow(holo_init, cmap="viridis")
+    ax1.set_title(f"Hologram | Label: {init_class}")
+    fig.colorbar(img1, ax=ax1, fraction=0.046, pad=0.04)
+
+    img2 = ax2.imshow(mask_init, cmap="gray")
+    ax2.set_title("Beamstop Mask")
+    fig.colorbar(img2, ax=ax2, fraction=0.046, pad=0.04)
+
+    ax_button = plt.axes([0.45, 0.05, 0.1, 0.075])
+    btn_next = Button(ax_button, "Next")
+    btn_next.on_clicked(viewer.next_image)
+
+    plt.show()
