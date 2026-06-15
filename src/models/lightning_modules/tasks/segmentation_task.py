@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from metrics.segmentation_metrics import get_metric_collection
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
+from models.loss_functions import CenterFocusedTverskyLoss
 
 
 class LitSegmentationTask(pl.LightningModule):
@@ -19,6 +20,9 @@ class LitSegmentationTask(pl.LightningModule):
         self.save_hyperparameters(ignore=["encoder", "head"])
         self.encoder = encoder
         self.head = head
+        self.loss_function = (
+            CenterFocusedTverskyLoss()
+        )  # TODO: Adjust Parameters -> Hyperparams?
 
         # can freeze backbone
         if self.hparams.freeze_encoder:
@@ -60,7 +64,9 @@ class LitSegmentationTask(pl.LightningModule):
         logits = self.head(patch_tokens)
         return logits
 
-    def dice_loss(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+    def dice_loss(
+        self, logits: torch.Tensor, targets: torch.Tensor
+    ) -> torch.Tensor:  # TODO: check if still needed
         """
         Calculates Dice loss
         """
@@ -80,7 +86,7 @@ class LitSegmentationTask(pl.LightningModule):
         x, _, y_mask = batch
         logits = self(x)
 
-        loss = self.dice_loss(logits, y_mask)
+        loss = self.loss_function(logits, y_mask)
         probs = torch.sigmoid(logits)
         metrics_collection.update(probs, (y_mask > 0.5).long())
 
