@@ -55,6 +55,7 @@ class HologramDataset(Dataset):
         run_keys,
         label_map,
         transform=None,
+        use_difference_holograms: bool = False,
     ):
         """
         :param h5_filepath: path to the h5 data file
@@ -66,6 +67,7 @@ class HologramDataset(Dataset):
         self.run_keys = run_keys
         self.label_map = label_map
         self.transform = transform
+        self.use_difference_holograms = use_difference_holograms
         self.h5_file = None
 
     def open_hdf5(self):
@@ -73,43 +75,52 @@ class HologramDataset(Dataset):
             self.h5_file = h5py.File(self.h5_filepath, "r")
 
     def __len__(self):
-        return len(self.run_keys) * 2  # each run yields two holograms (CL and CR)
+        if not self.use_difference_holograms:
+            return len(self.run_keys) * 2  # each run yields two holograms (CL and CR)
+        else:
+            return len(self.run_keys)  # CL and CR are used to calculate the diff holo
 
     def __getitem__(self, idx):
         self.open_hdf5()
 
         run_idx = idx // 2
-        is_cr = idx % 2
         run_key = self.run_keys[run_idx]
         run_data = self.h5_file[run_key]
 
-        if is_cr == 0:
-            holo = run_data["CL"]["detected"][:]
-        else:
-            holo = run_data["CR"]["detected"][:]
-
-        mask_np = run_data["beamstop_mask"][:]
-        holo = np.squeeze(holo)
-        mask_np = np.squeeze(mask_np)
-
         label_val = run_data["metadata"]["sample"]["magnetic_pattern"][
             "pattern_type_method"
-        ][()]
-        if isinstance(label_val, bytes):
-            label_val = label_val.decode("utf-8")
+        ][()].decode("utf-8")
 
-        # Preprocess hologram
-        holo = np.array(holo, dtype=np.float32)
-        holo = np.clip(holo, 0, None)
-        holo = np.log1p(holo)
-
-        # normalize specific image
-        h_min = holo.min()
-        h_max = holo.max()
-        if h_max > h_min:
-            holo = (holo - h_min) / (h_max - h_min)
+        # Load hologram
+        holo = None
+        if self.use_difference_holograms:
+            holo = (run_data["CL"]["detected"][:]) - (run_data["CR"]["detected"][:])
         else:
-            holo = holo - h_min
+            is_cr = idx % 2
+            holo = (
+                run_data["CR"]["detected"][:]
+                if is_cr
+                else run_data["CL"]["detected"][:]
+            )
+
+        mask_np = run_data["beamstop_mask"][:]
+        holo = np.squeeze(holo).astype(np.float32)
+        mask_np = np.squeeze(mask_np)
+
+        if self.use_difference_holograms:
+            # use symmetric logarithm for difference holograms to maintain the sign and compress dynamic
+            holo = np.sign(holo) * np.log1p(np.abs(holo))
+
+            # zero preserving normalization (range [-1,1])
+            max_abs = np.max(np.abs(holo))
+            if max_abs > 0:
+                holo = holo / max_abs
+        else:
+            holo = np.clip(holo, 0, None)
+            holo = np.log1p(holo)
+            h_max = holo.max()
+            if h_max > 0:
+                holo = holo / h_max
 
         # convert to pytorch tensor with dim [1, H, W]
         tensor = torch.from_numpy(holo).float().unsqueeze(0)
@@ -133,13 +144,15 @@ class HologramDataModule(AbstractDataset):
         data_dir: str,
         batch_size: int = 32,
         num_workers: int = min(8, max(1, (os.cpu_count() or 1) - 3)),
+        use_difference_holograms: bool = False,
     ):
         super().__init__(
             data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
         )
         self.img_size = 960
         self.setup_loaded = False
-        self.initial_crop_size = 960
+        self.use_difference_holograms = use_difference_holograms
+        self.initial_crop_size = 1300  # TODO: renove if ot necessary anymore
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size, target_size=self.img_size
@@ -174,9 +187,14 @@ class HologramDataModule(AbstractDataset):
             unique_labels = sorted(list(all_labels))
             label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
 
-            logger.info(
-                f"Found {len(run_keys)*2} total samples from {len(run_keys)} runs."
-            )
+            if self.use_difference_holograms:
+                logger.info(
+                    f"Found {len(run_keys)} total samples from {len(run_keys)} runs. Calculating Difference Holograms"
+                )
+            else:
+                logger.info(
+                    f"Found {len(run_keys)*2} total samples from {len(run_keys)} runs."
+                )
             logger.info(f"Detected classes: {label_map}")
 
             # stratified group shuffle split with 80% train, 10% validation and 10% test split
@@ -194,7 +212,7 @@ class HologramDataModule(AbstractDataset):
                 temp_keys,
                 temp_labels,
                 test_size=0.5,
-                stratify=temp_labels,
+                # stratify=temp_labels,
                 random_state=42,
             )
 
@@ -204,18 +222,21 @@ class HologramDataModule(AbstractDataset):
             train_keys,
             label_map,
             transform=self.transform,
+            use_difference_holograms=self.use_difference_holograms,
         )
         self.val_dataset = HologramDataset(
             self.data_dir,
             val_keys,
             label_map,
             transform=self.transform,
+            use_difference_holograms=self.use_difference_holograms,
         )
         self.test_dataset = HologramDataset(
             self.data_dir,
             test_keys,
             label_map,
             transform=self.transform,
+            use_difference_holograms=self.use_difference_holograms,
         )
 
         self.setup_loaded = True
@@ -259,7 +280,7 @@ if __name__ == "__main__":
     data_path = (
         "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\master_dataset.h5"
     )
-    data_module = HologramDataModule(data_path)
+    data_module = HologramDataModule(data_path, use_difference_holograms=True)
     data_module.setup()
     train_loader = data_module.train_dataloader()
     inv_label_map = {v: k for k, v in data_module.train_dataset.label_map.items()}
