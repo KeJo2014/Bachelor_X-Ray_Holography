@@ -8,10 +8,28 @@ import hydra
 from experiments.abstract_experiment import AbstractExperiment
 from datasets.abstract_dataset import AbstractDataset
 from visualizations.mae_visualizations import visualize_mae_results
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, Callback
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
 from hydra.utils import instantiate, get_class
+
+
+class MAEVisualizationCallback(Callback):
+    """Callback to visualize and log first batch"""
+
+    def on_test_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
+    ):
+        if batch_idx == 0:
+            batch_x, _, _ = batch
+            fig = visualize_mae_results(pl_module, batch_x)
+
+            for logger in trainer.loggers:
+                if isinstance(logger, MLFlowLogger):
+                    logger.experiment.log_figure(
+                        logger.run_id, fig, "visualizations/reconstruction.png"
+                    )
+            plt.close(fig)
 
 
 class RandomSimMIMExperiment(AbstractExperiment):
@@ -66,24 +84,21 @@ class RandomSimMIMExperiment(AbstractExperiment):
         if self.model == None:
             self._load_model_from_checkpoint(model_type=model_type)
 
+        vis_callback = MAEVisualizationCallback()
+
         mlflow_logger = MLFlowLogger(
             tracking_uri=self.config.mlflow_uri,
             run_name="Evaluation",
             run_id=self.mlflow_run_id,
         )
 
-        trainer = pl.Trainer(accelerator="auto", devices=1, logger=mlflow_logger)
+        trainer = pl.Trainer(
+            accelerator="auto",
+            devices=1,
+            logger=mlflow_logger,
+            callbacks=[vis_callback],
+        )
         trainer.test(self.model, datamodule=self.dataloader)
-
-    def generate_evaluation_visualization(self, model_type: pl.LightningModule):
-        if self.model == None:
-            self._load_model_from_checkpoint(model_type=model_type)
-
-        test_loader = self.dataloader.test_dataloader()
-        batch_x, _, _ = next(iter(test_loader))
-        fig = visualize_mae_results(self.model, batch_x)
-        mlflow.log_figure(fig, "visualizations/mae_reconstruction.png")
-        plt.close(fig)
 
 
 @hydra.main(version_base=None, config_path="../../conf/", config_name="backbone_config")
@@ -124,7 +139,6 @@ def main(cfg: DictConfig):
 
         if not cfg.get("hyperparameter_optimization_mode", False):
             experiment.evaluate_model(ModelClass)
-            experiment.generate_evaluation_visualization(ModelClass)
 
     return best_val_loss
 
