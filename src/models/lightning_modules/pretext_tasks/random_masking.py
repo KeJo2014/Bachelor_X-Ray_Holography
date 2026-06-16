@@ -1,5 +1,5 @@
 import torch
-from models.loss_functions.RadiallyWeightedLoss import RadiallyWeightedLoss
+from models.loss_functions import RadiallyWeightedLoss
 from models.lightning_modules.pretext_tasks.pretext_task_action import PretextTaskAction
 
 
