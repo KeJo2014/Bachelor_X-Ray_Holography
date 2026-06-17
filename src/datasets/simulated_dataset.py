@@ -19,27 +19,31 @@ class CDICropAndBinTransform:
     Use average for diffration image and max pooling for the beamstop mask
     """
 
-    def __init__(self, crop_size: int, target_size: int):
+    def __init__(self, crop_size: int, target_size: int, center_holograms: bool = True):
         self.crop_size = crop_size
         self.target_size = (target_size, target_size)
+        self.center_holograms = center_holograms
 
     def __call__(self, image, mask):
-        image_np = image.squeeze(0).numpy()
+        if self.center_holograms:
+            image_np = image.squeeze(0).numpy()
+            # apply threshold to get brightest 1% of pixels -> halo around hologram center
+            threshold = np.percentile(image_np, 99.0)
+            bright_core = image_np > threshold
 
-        # apply threshold to get brightest 1% of pixels -> halo around hologram center
-        threshold = np.percentile(image_np, 99.0)
-        bright_core = image_np > threshold
+            # calculate hologram center coordinates and calc crop coordinates
+            center_y, center_x = scipy.ndimage.center_of_mass(bright_core)
+            cy = int(round(center_y))
+            cx = int(round(center_x))
+            crop_h, crop_w = self.crop_size, self.crop_size
+            top = cy - (crop_h // 2)
+            left = cx - (crop_w // 2)
 
-        # calculate hologram center coordinates and calc crop coordinates
-        center_y, center_x = scipy.ndimage.center_of_mass(bright_core)
-        cy = int(round(center_y))
-        cx = int(round(center_x))
-        crop_h, crop_w = self.crop_size, self.crop_size
-        top = cy - (crop_h // 2)
-        left = cx - (crop_w // 2)
-
-        image = TF.crop(image, top, left, crop_h, crop_w)
-        mask = TF.crop(mask, top, left, crop_h, crop_w)
+            image = TF.crop(image, top, left, crop_h, crop_w)
+            mask = TF.crop(mask, top, left, crop_h, crop_w)
+        else:
+            image = TF.center_crop(image, output_size=[self.crop_size, self.crop_size])
+            mask = TF.center_crop(mask, output_size=[self.crop_size, self.crop_size])
 
         # apply adaptiv pooling
         image = F.adaptive_avg_pool2d(image, self.target_size)
@@ -145,6 +149,7 @@ class HologramDataModule(AbstractDataset):
         batch_size: int = 32,
         num_workers: int = min(8, max(1, (os.cpu_count() or 1) - 3)),
         use_difference_holograms: bool = False,
+        center_holograms: bool = True,
     ):
         super().__init__(
             data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
@@ -152,10 +157,12 @@ class HologramDataModule(AbstractDataset):
         self.img_size = 960
         self.setup_loaded = False
         self.use_difference_holograms = use_difference_holograms
-        self.initial_crop_size = 1300  # TODO: renove if ot necessary anymore
+        self.initial_crop_size = 1100  # TODO: renove if ot necessary anymore
 
         self.transform = CDICropAndBinTransform(
-            crop_size=self.initial_crop_size, target_size=self.img_size
+            crop_size=self.initial_crop_size,
+            target_size=self.img_size,
+            center_holograms=center_holograms,
         )
 
     def setup(self, stage=None):
@@ -206,13 +213,11 @@ class HologramDataModule(AbstractDataset):
                 stratify=run_labels,
                 random_state=42,
             )
-
-            # Zweiter Split: Temp hälftig in Val (10%) und Test (10%) aufteilen
             val_keys, test_keys, _, _ = train_test_split(
                 temp_keys,
                 temp_labels,
                 test_size=0.5,
-                # stratify=temp_labels,
+                stratify=temp_labels,
                 random_state=42,
             )
 
@@ -280,7 +285,9 @@ if __name__ == "__main__":
     data_path = (
         "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\master_dataset.h5"
     )
-    data_module = HologramDataModule(data_path, use_difference_holograms=True)
+    data_module = HologramDataModule(
+        data_path, use_difference_holograms=False, center_holograms=True
+    )
     data_module.setup()
     train_loader = data_module.train_dataloader()
     inv_label_map = {v: k for k, v in data_module.train_dataset.label_map.items()}
