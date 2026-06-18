@@ -91,9 +91,14 @@ class HologramDataset(Dataset):
         run_key = self.run_keys[run_idx]
         run_data = self.h5_file[run_key]
 
-        label_val = run_data["metadata"]["sample"]["magnetic_pattern"][
-            "pattern_type_method"
-        ][()].decode("utf-8")
+        if "magnetic_pattern" in run_data["metadata"].keys():
+            label_val = run_data["metadata"]["magnetic_pattern"]["pattern_type_method"][
+                ()
+            ].decode("utf-8")
+        else:
+            label_val = run_data["metadata"]["sample"]["magnetic_pattern"][
+                "pattern_type_method"
+            ][()].decode("utf-8")
 
         # Load hologram
         holo = None
@@ -122,9 +127,12 @@ class HologramDataset(Dataset):
         else:
             holo = np.clip(holo, 0, None)
             holo = np.log1p(holo)
+            h_min = holo.min()
             h_max = holo.max()
-            if h_max > 0:
-                holo = holo / h_max
+            if h_max > h_min:
+                holo = (holo - h_min) / (h_max - h_min)
+            else:
+                holo = holo - h_min
 
         # convert to pytorch tensor with dim [1, H, W]
         tensor = torch.from_numpy(holo).float().unsqueeze(0)
@@ -157,7 +165,7 @@ class HologramDataModule(AbstractDataset):
         self.img_size = 960
         self.setup_loaded = False
         self.use_difference_holograms = use_difference_holograms
-        self.initial_crop_size = 1100  # TODO: renove if ot necessary anymore
+        self.initial_crop_size = 960  # TODO: renove if ot necessary anymore
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size,
@@ -178,9 +186,14 @@ class HologramDataModule(AbstractDataset):
             all_labels = set()
             run_labels = []
             for key in run_keys:
-                lbl = data[key]["metadata"]["sample"]["magnetic_pattern"][
-                    "pattern_type_method"
-                ][()]
+                if "magnetic_pattern" in data[key]["metadata"].keys():
+                    lbl = data[key]["metadata"]["magnetic_pattern"][
+                        "pattern_type_method"
+                    ][()].decode("utf-8")
+                else:
+                    lbl = data[key]["metadata"]["sample"]["magnetic_pattern"][
+                        "pattern_type_method"
+                    ][()].decode("utf-8")
                 if isinstance(lbl, bytes):
                     lbl = lbl.decode("utf-8")
                 all_labels.add(lbl)
@@ -282,9 +295,7 @@ if __name__ == "__main__":
     from matplotlib.widgets import Button
 
     # Initialize data module
-    data_path = (
-        "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\master_dataset.h5"
-    )
+    data_path = "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\simulation_sweep_1.h5"
     data_module = HologramDataModule(
         data_path, use_difference_holograms=False, center_holograms=True
     )

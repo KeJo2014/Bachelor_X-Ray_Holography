@@ -128,14 +128,17 @@ def main(cfg: DictConfig):
             config=cfg,
             model_settings=variation,
         )
-        model = instantiate(variation.parameters.model, img_size=datamodule.img_size)
         ModelClass = get_class(variation.parameters.model._target_)
-        experiment.train_model(model)
 
-        # get validation loss for the optuna optimizer
-        current_val_loss = experiment.model.trainer.callback_metrics.get("val/loss")
-        if current_val_loss is not None:
-            best_val_loss = min(best_val_loss, current_val_loss.item())
+        if not cfg.eval_only_mode:
+            model = instantiate(
+                variation.parameters.model, img_size=datamodule.img_size
+            )
+            experiment.train_model(model)
+            # get validation loss for the optuna optimizer
+            current_val_loss = experiment.model.trainer.callback_metrics.get("val/loss")
+            if current_val_loss is not None:
+                best_val_loss = min(best_val_loss, current_val_loss.item())
 
         if not cfg.get("hyperparameter_optimization_mode", False):
             experiment.evaluate_model(ModelClass)
