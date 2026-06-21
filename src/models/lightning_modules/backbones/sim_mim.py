@@ -20,16 +20,18 @@ class LitSimMIM(pl.LightningModule):
         lr: float = 1.5e-4,
         weight_decay: float = 0.05,
         warmup_ratio: float = 0.1,
+        channels: int = 3,
     ):
         super().__init__()
         self.save_hyperparameters()
 
+        self.C = channels
         self.pretext_strategy = pretext_strategy
         self.patch_size = patch_size
         self.grid_size = img_size // patch_size
         self.num_patches = self.grid_size**2
 
-        self.pixels_per_patch = patch_size * patch_size * 1
+        self.pixels_per_patch = patch_size * patch_size * self.C
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.pixels_per_patch))
         torch.nn.init.normal_(self.mask_token, std=0.02)
 
@@ -40,7 +42,7 @@ class LitSimMIM(pl.LightningModule):
             pretrained=False,
             num_classes=0,
             global_pool="",
-            in_chans=1,
+            in_chans=self.C,
         )
 
         self.decoder = nn.Sequential(
@@ -53,9 +55,9 @@ class LitSimMIM(pl.LightningModule):
         """Disects 2d image [B, C, H, W] into 1d patches [B, Num_Patches, Patch_Size^2]."""
         p = self.patch_size
         h = w = self.grid_size
-        x = imgs.reshape(shape=(imgs.shape[0], 1, h, p, w, p))
+        x = imgs.reshape(shape=(imgs.shape[0], self.C, h, p, w, p))
         x = torch.einsum("nchpwq->nhwpqc", x)
-        x = x.reshape(shape=(imgs.shape[0], h * w, p**2))
+        x = x.reshape(shape=(imgs.shape[0], h * w, (p**2) * self.C))
         return x
 
     def unpatchify(self, patches: torch.Tensor) -> torch.Tensor:
@@ -63,9 +65,9 @@ class LitSimMIM(pl.LightningModule):
         p = self.patch_size
         h = w = self.grid_size
 
-        x = patches.reshape(shape=(patches.shape[0], h, w, p, p, 1))
+        x = patches.reshape(shape=(patches.shape[0], h, w, p, p, self.C))
         x = torch.einsum("nhwpqc->nchpwq", x)
-        x = x.reshape(shape=(patches.shape[0], 1, h * p, w * p))
+        x = x.reshape(shape=(patches.shape[0], self.C, h * p, w * p))
         return x
 
     def forward(

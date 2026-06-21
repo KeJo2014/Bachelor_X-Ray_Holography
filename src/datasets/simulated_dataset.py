@@ -26,7 +26,8 @@ class CDICropAndBinTransform:
 
     def __call__(self, image, mask):
         if self.center_holograms:
-            image_np = image.squeeze(0).numpy()
+            image_np = image.numpy()[0]
+
             # apply threshold to get brightest 1% of pixels -> halo around hologram center
             threshold = np.percentile(image_np, 99.0)
             bright_core = image_np > threshold
@@ -59,19 +60,20 @@ class HologramDataset(Dataset):
         run_keys,
         label_map,
         transform=None,
-        use_difference_holograms: bool = False,
+        mode: str = "raw",
     ):
         """
         :param h5_filepath: path to the h5 data file
         :param run_keys: list of specific h5 run keys assigned to this split
         :param label_map: dict mapping labels to class integers
         :param transform: pytorch transformation
+        :param mode: "raw" (1-chan CL/CR), "diff" (1-chan Diff), or "rgb" (3-chan CL, CR, Diff)
         """
         self.h5_filepath = h5_filepath
         self.run_keys = run_keys
         self.label_map = label_map
         self.transform = transform
-        self.use_difference_holograms = use_difference_holograms
+        self.mode = mode
         self.h5_file = None
 
     def open_hdf5(self):
@@ -79,62 +81,80 @@ class HologramDataset(Dataset):
             self.h5_file = h5py.File(self.h5_filepath, "r")
 
     def __len__(self):
-        if not self.use_difference_holograms:
-            return len(self.run_keys) * 2  # each run yields two holograms (CL and CR)
+        if self.mode == "raw":
+            return len(self.run_keys) * 2  # CL and CR treated as individual samples
         else:
-            return len(self.run_keys)  # CL and CR are used to calculate the diff holo
+            return len(self.run_keys)  # Diff or RGB combine CL and CR into one sample
 
-    def __getitem__(self, idx):
-        self.open_hdf5()
-
-        run_idx = idx // 2
-        run_key = self.run_keys[run_idx]
-        run_data = self.h5_file[run_key]
-
-        label_val = run_data["metadata"]["sample"]["magnetic_pattern"][
-            "pattern_type_method"
-        ][()].decode("utf-8")
-
-        # Load hologram
-        holo = None
-        if self.use_difference_holograms:
-            holo = (run_data["CL"]["detected"][:]) - (run_data["CR"]["detected"][:])
-        else:
-            is_cr = idx % 2
-            holo = (
-                run_data["CR"]["detected"][:]
-                if is_cr
-                else run_data["CL"]["detected"][:]
-            )
-
-        mask_np = run_data["beamstop_mask"][:]
-        holo = np.squeeze(holo).astype(np.float32)
-        mask_np = np.squeeze(mask_np)
-
-        if self.use_difference_holograms:
-            # use symmetric logarithm for difference holograms to maintain the sign and compress dynamic
+    def _scale_hologram(self, holo, is_diff=False):
+        if is_diff:
+            # symmetric logarithm for difference holograms
             holo = np.sign(holo) * np.log1p(np.abs(holo))
-
-            # zero preserving normalization (range [-1,1])
             max_abs = np.max(np.abs(holo))
             if max_abs > 0:
                 holo = holo / max_abs
         else:
+            # min-max scaling for raw holograms
             holo = np.clip(holo, 0, None)
             holo = np.log1p(holo)
+            h_min = holo.min()
             h_max = holo.max()
-            if h_max > 0:
-                holo = holo / h_max
+            if h_max > h_min:
+                holo = (holo - h_min) / (h_max - h_min)
+            else:
+                holo = holo - h_min
 
-        # convert to pytorch tensor with dim [1, H, W]
-        tensor = torch.from_numpy(holo).float().unsqueeze(0)
+        return holo
+
+    def __getitem__(self, idx):
+        self.open_hdf5()
+
+        # Adjust run_idx based on mode
+        run_idx = idx // 2 if self.mode == "raw" else idx
+        run_key = self.run_keys[run_idx]
+        run_data = self.h5_file[run_key]
+
+        if "magnetic_pattern" in run_data["metadata"].keys():
+            label_val = run_data["metadata"]["magnetic_pattern"]["pattern_type_method"][
+                ()
+            ].decode("utf-8")
+        else:
+            label_val = run_data["metadata"]["sample"]["magnetic_pattern"][
+                "pattern_type_method"
+            ][()].decode("utf-8")
+
+        holo_cl = np.squeeze(run_data["CL"]["detected"][:])
+        holo_cr = np.squeeze(run_data["CR"]["detected"][:])
+
+        if self.mode == "rgb":
+            holo_diff = holo_cl - holo_cr
+            holo_cl = self._scale_hologram(holo_cl, is_diff=False)
+            holo_cr = self._scale_hologram(holo_cr, is_diff=False)
+            holo_diff = self._scale_hologram(holo_diff, is_diff=True)
+            tensor = torch.from_numpy(
+                np.stack([holo_cl, holo_cr, holo_diff], axis=0)
+            ).float()
+
+        elif self.mode == "diff":
+            holo_diff = holo_cl - holo_cr
+            holo_diff = self._scale_hologram(holo_diff, is_diff=True)
+            tensor = torch.from_numpy(holo_diff).float().unsqueeze(0)
+
+        elif self.mode == "raw":
+            is_cr = idx % 2
+            holo = holo_cr if is_cr else holo_cl
+            holo = self._scale_hologram(holo, is_diff=False)
+            tensor = torch.from_numpy(holo).float().unsqueeze(0)
+
+        else:
+            raise ValueError(f"Unknown mode specified: {self.mode}")
+
+        mask_np = np.squeeze(run_data["beamstop_mask"][:])
         mask_tensor = torch.from_numpy(mask_np).float().unsqueeze(0)
 
-        # if applicable apply transformation
         if self.transform:
             tensor, mask_tensor = self.transform(tensor, mask_tensor)
 
-        # generate one-hot-tensor map
         num_classes = len(self.label_map)
         label_tensor = torch.zeros(num_classes, dtype=torch.float32)
         label_tensor[self.label_map[label_val]] = 1.0
@@ -148,16 +168,16 @@ class HologramDataModule(AbstractDataset):
         data_dir: str,
         batch_size: int = 32,
         num_workers: int = min(8, max(1, (os.cpu_count() or 1) - 3)),
-        use_difference_holograms: bool = False,
         center_holograms: bool = True,
+        mode: str = None,
     ):
         super().__init__(
             data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
         )
         self.img_size = 960
         self.setup_loaded = False
-        self.use_difference_holograms = use_difference_holograms
-        self.initial_crop_size = 1100  # TODO: renove if ot necessary anymore
+        self.initial_crop_size = 1100
+        self.mode = mode
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size,
@@ -178,15 +198,19 @@ class HologramDataModule(AbstractDataset):
             all_labels = set()
             run_labels = []
             for key in run_keys:
-                lbl = data[key]["metadata"]["sample"]["magnetic_pattern"][
-                    "pattern_type_method"
-                ][()]
+                if "magnetic_pattern" in data[key]["metadata"].keys():
+                    lbl = data[key]["metadata"]["magnetic_pattern"][
+                        "pattern_type_method"
+                    ][()]
+                else:
+                    lbl = data[key]["metadata"]["sample"]["magnetic_pattern"][
+                        "pattern_type_method"
+                    ][()]
                 if isinstance(lbl, bytes):
                     lbl = lbl.decode("utf-8")
                 all_labels.add(lbl)
                 run_labels.append(lbl)
 
-                # check general format
                 assert "CL" in data[key].keys()
                 assert "CR" in data[key].keys()
 
@@ -194,18 +218,16 @@ class HologramDataModule(AbstractDataset):
             unique_labels = sorted(list(all_labels))
             label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
 
-            if self.use_difference_holograms:
+            if self.mode != "raw":
                 logger.info(
-                    f"Found {len(run_keys)} total samples from {len(run_keys)} runs. Calculating Difference Holograms"
+                    f"Found {len(run_keys)} total samples from {len(run_keys)} runs. Mode: {self.mode.upper()}"
                 )
             else:
                 logger.info(
-                    f"Found {len(run_keys)*2} total samples from {len(run_keys)} runs."
+                    f"Found {len(run_keys)*2} total samples from {len(run_keys)} runs. Mode: RAW"
                 )
             logger.info(f"Detected classes: {label_map}")
 
-            # stratified group shuffle split with 80% train, 10% validation and 10% test split
-            # ensuring CL and CR from the same run stick together -> prevent data leakage
             train_keys, temp_keys, train_labels, temp_labels = train_test_split(
                 run_keys,
                 run_labels,
@@ -227,21 +249,21 @@ class HologramDataModule(AbstractDataset):
             train_keys,
             label_map,
             transform=self.transform,
-            use_difference_holograms=self.use_difference_holograms,
+            mode=self.mode,
         )
         self.val_dataset = HologramDataset(
             self.data_dir,
             val_keys,
             label_map,
             transform=self.transform,
-            use_difference_holograms=self.use_difference_holograms,
+            mode=self.mode,
         )
         self.test_dataset = HologramDataset(
             self.data_dir,
             test_keys,
             label_map,
             transform=self.transform,
-            use_difference_holograms=self.use_difference_holograms,
+            mode=self.mode,
         )
 
         self.setup_loaded = True
@@ -281,25 +303,22 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
 
-    # Initialize data module
-    data_path = (
-        "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\master_dataset.h5"
-    )
+    data_path = "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\simulation_sweep_1.h5"
+    current_mode = "rgb"  # rgb, raw, diff
+
     data_module = HologramDataModule(
-        data_path, use_difference_holograms=False, center_holograms=True
+        data_path, mode=current_mode, center_holograms=True
     )
     data_module.setup()
     train_loader = data_module.train_dataloader()
     inv_label_map = {v: k for k, v in data_module.train_dataset.label_map.items()}
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-    plt.subplots_adjust(bottom=0.2)
-
     class ViewerState:
-        def __init__(self, dataloader, inv_map):
+        def __init__(self, dataloader, inv_map, mode):
             self.dataloader = dataloader
             self.data_iter = iter(self.dataloader)
             self.inv_map = inv_map
+            self.mode = mode
             self.current_batch = next(self.data_iter)
             self.batch_idx = 0
             self.batch_size = self.current_batch[0].shape[0]
@@ -321,37 +340,105 @@ if __name__ == "__main__":
         def update_plot(self):
             holo, label, mask = self.current_batch
             idx = self.batch_idx
-            h = holo[idx].squeeze(0).numpy()
             m = mask[idx].squeeze(0).numpy()
 
             class_idx = torch.argmax(label[idx]).item()
             class_name = self.inv_map[class_idx]
 
-            img1.set_data(h)
-            img1.set_clim(vmin=h.min(), vmax=h.max())
-            ax1.set_title(f"Hologram | Label: {class_name}")
+            if self.mode == "rgb":
+                h_cl = holo[idx][0].squeeze().numpy()
+                h_cr = holo[idx][1].squeeze().numpy()
+                h_diff = holo[idx][2].squeeze().numpy()
 
-            img2.set_data(m)
-            ax2.set_title("Beamstop Mask")
+                img_cl.set_data(h_cl)
+                img_cl.set_clim(vmin=h_cl.min(), vmax=h_cl.max())
 
+                img_cr.set_data(h_cr)
+                img_cr.set_clim(vmin=h_cr.min(), vmax=h_cr.max())
+
+                img_diff.set_data(h_diff)
+                max_val = max(abs(h_diff.min()), abs(h_diff.max()))
+                img_diff.set_clim(vmin=-max_val, vmax=max_val)
+            else:
+                h_single = holo[idx][0].squeeze().numpy()
+                img_single.set_data(h_single)
+
+                if self.mode == "diff":
+                    max_val = max(abs(h_single.min()), abs(h_single.max()))
+                    img_single.set_clim(vmin=-max_val, vmax=max_val)
+                else:
+                    img_single.set_clim(vmin=h_single.min(), vmax=h_single.max())
+
+            img_mask.set_data(m)
+
+            fig.suptitle(
+                f"Hologramm Übersicht | Klasse: {class_name}",
+                fontsize=14,
+                fontweight="bold",
+            )
             fig.canvas.draw_idle()
 
-    viewer = ViewerState(train_loader, inv_label_map)
-    holo_init = viewer.current_batch[0][0].squeeze(0).numpy()
-    mask_init = viewer.current_batch[2][0].squeeze(0).numpy()
-    init_class = inv_label_map[torch.argmax(viewer.current_batch[1][0]).item()]
+    viewer = ViewerState(train_loader, inv_label_map, data_module.mode)
+    holo_init, label_init, mask_init_batch = viewer.current_batch
+    mask_init = mask_init_batch[0].squeeze(0).numpy()
+    init_class = inv_label_map[torch.argmax(label_init[0]).item()]
 
-    # initial images
-    img1 = ax1.imshow(holo_init, cmap="viridis")
-    ax1.set_title(f"Hologram | Label: {init_class}")
-    fig.colorbar(img1, ax=ax1, fraction=0.046, pad=0.04)
+    if data_module.mode == "rgb":
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(22, 6))
+        plt.subplots_adjust(bottom=0.25)
 
-    img2 = ax2.imshow(mask_init, cmap="gray")
-    ax2.set_title("Beamstop Mask")
-    fig.colorbar(img2, ax=ax2, fraction=0.046, pad=0.04)
+        init_cl = holo_init[0][0].squeeze().numpy()
+        init_cr = holo_init[0][1].squeeze().numpy()
+        init_diff = holo_init[0][2].squeeze().numpy()
 
-    ax_button = plt.axes([0.45, 0.05, 0.1, 0.075])
-    btn_next = Button(ax_button, "Next")
+        img_cl = ax1.imshow(init_cl, cmap="viridis")
+        ax1.set_title("Kanal 0: CL")
+        fig.colorbar(img_cl, ax=ax1, fraction=0.046, pad=0.04)
+
+        img_cr = ax2.imshow(init_cr, cmap="viridis")
+        ax2.set_title("Kanal 1: CR")
+        fig.colorbar(img_cr, ax=ax2, fraction=0.046, pad=0.04)
+
+        img_diff = ax3.imshow(init_diff, cmap="coolwarm")
+        ax3.set_title("Kanal 2: Diff (CL - CR)")
+        max_init_val = max(abs(init_diff.min()), abs(init_diff.max()))
+        img_diff.set_clim(vmin=-max_init_val, vmax=max_init_val)
+        fig.colorbar(img_diff, ax=ax3, fraction=0.046, pad=0.04)
+
+        img_mask = ax4.imshow(mask_init, cmap="gray")
+        ax4.set_title("Beamstop Maske")
+        fig.colorbar(img_mask, ax=ax4, fraction=0.046, pad=0.04)
+
+    else:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+        plt.subplots_adjust(bottom=0.25)
+
+        init_single = holo_init[0][0].squeeze().numpy()
+
+        cmap = "coolwarm" if data_module.mode == "diff" else "viridis"
+        img_single = ax1.imshow(init_single, cmap=cmap)
+        ax1.set_title(
+            "Hologramm (RAW)" if data_module.mode == "raw" else "Differenz-Hologramm"
+        )
+
+        if data_module.mode == "diff":
+            max_init_val = max(abs(init_single.min()), abs(init_single.max()))
+            img_single.set_clim(vmin=-max_init_val, vmax=max_init_val)
+        else:
+            img_single.set_clim(vmin=init_single.min(), vmax=init_single.max())
+
+        fig.colorbar(img_single, ax=ax1, fraction=0.046, pad=0.04)
+
+        img_mask = ax2.imshow(mask_init, cmap="gray")
+        ax2.set_title("Beamstop Maske")
+        fig.colorbar(img_mask, ax=ax2, fraction=0.046, pad=0.04)
+
+    fig.suptitle(
+        f"Hologram Overview - Class: {init_class}", fontsize=14, fontweight="bold"
+    )
+
+    ax_button = plt.axes([0.45, 0.05, 0.1, 0.06])
+    btn_next = Button(ax_button, "Nächstes Bild")
     btn_next.on_clicked(viewer.next_image)
 
     plt.show()

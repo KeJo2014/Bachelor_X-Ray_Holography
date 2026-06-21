@@ -10,7 +10,7 @@ class RandomMaskingStrategy(PretextTaskAction):
         super().__init__(
             img_size=img_size, patch_size=patch_size, mask_ratio=mask_ratio
         )
-        self.loss_function = RadiallyWeightedLoss(loss_type="l1")
+        self.loss_function = RadiallyWeightedLoss(loss_type="l2")
         self.grid_size = img_size // patch_size
 
     def generate_mask(
@@ -24,10 +24,11 @@ class RandomMaskingStrategy(PretextTaskAction):
         """Retransform 1D patches to 2d image"""
         p = self.patch_size
         h = w = self.grid_size
+        c = patches.shape[-1] // (p**2)
 
-        x = patches.reshape(shape=(patches.shape[0], h, w, p, p, 1))
+        x = patches.reshape(shape=(patches.shape[0], h, w, p, p, c))
         x = torch.einsum("nhwpqc->nchpwq", x)
-        x = x.reshape(shape=(patches.shape[0], 1, h * p, w * p))
+        x = x.reshape(shape=(patches.shape[0], c, h * p, w * p))
         return x
 
     def compute_loss(
