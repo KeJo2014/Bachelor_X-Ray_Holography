@@ -42,9 +42,8 @@ class RandomMaskingStrategy(PretextTaskAction):
         mask_2d_grid = mask_1d.view(B, 1, H_patches, W_patches).float()
         mask_2d_full = mask_2d_grid.repeat_interleave(self.patch_size, dim=2)
         mask_2d_full = mask_2d_full.repeat_interleave(self.patch_size, dim=3)
-        ignore_mask = 1.0 - mask_2d_full
 
         loss = self.loss_function(
-            self._unpatchify(preds), self._unpatchify(targets), mask=ignore_mask
+            self._unpatchify(preds), self._unpatchify(targets), mask=mask_2d_full
         )
         return loss
