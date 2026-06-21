@@ -30,8 +30,9 @@ class RadiallyWeightedLoss(nn.Module):
         x_coords = torch.arange(W, device=device, dtype=torch.float32) - center_x
         Y, X = torch.meshgrid(y_coords, x_coords, indexing="ij")
 
-        # calculate euclidian distance for each pixel
+        # calculate euclidian distance for each pixel and apply log damping
         R = torch.sqrt(X**2 + Y**2).unsqueeze(0).unsqueeze(0)
+        R = torch.log1p(R)
 
         # determine valid pixels (only those who were masked before)
         valid_pixels = torch.ones_like(R)
