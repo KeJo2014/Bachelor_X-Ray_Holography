@@ -15,21 +15,41 @@ from hydra.utils import instantiate, get_class
 
 
 class MAEVisualizationCallback(Callback):
-    """Callback to visualize and log first batch"""
+    """Callback to visualize and log first batch during testing and validation"""
+
+    def __init__(self, log_every_n_epochs: int = -1):
+        print(log_every_n_epochs)
+        super().__init__()
+        self.log_every_n_epochs = log_every_n_epochs
+
+    def _log_visualization(self, trainer, pl_module, batch, filename):
+        batch_x, _, _ = batch
+        fig = visualize_mae_results(pl_module, batch_x)
+
+        for logger in trainer.loggers:
+            if isinstance(logger, MLFlowLogger):
+                logger.experiment.log_figure(logger.run_id, fig, filename)
+        plt.close(fig)
+        print("logged: " + filename)
 
     def on_test_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
     ):
         if batch_idx == 0:
-            batch_x, _, _ = batch
-            fig = visualize_mae_results(pl_module, batch_x)
+            self._log_visualization(
+                trainer, pl_module, batch, "visualizations/test_reconstruction.png"
+            )
 
-            for logger in trainer.loggers:
-                if isinstance(logger, MLFlowLogger):
-                    logger.experiment.log_figure(
-                        logger.run_id, fig, "visualizations/reconstruction.png"
-                    )
-            plt.close(fig)
+    def on_validation_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
+    ):
+        if (
+            self.log_every_n_epochs != -1
+            and batch_idx == 0
+            and trainer.current_epoch % self.log_every_n_epochs == 0
+        ):
+            filename = f"visualizations/val_reconstruction_epoch_{trainer.current_epoch:03d}.png"
+            self._log_visualization(trainer, pl_module, batch, filename)
 
 
 class RandomSimMIMExperiment(AbstractExperiment):
@@ -63,6 +83,12 @@ class RandomSimMIMExperiment(AbstractExperiment):
             save_top_k=3,
         )
 
+        vis_callback = MAEVisualizationCallback(
+            log_every_n_epochs=self.model_settings.parameters.get(
+                "log_every_n_epochs", -1
+            )
+        )
+
         mlflow_logger = MLFlowLogger(
             tracking_uri=self.config.mlflow_uri,
             run_name="Training",
@@ -74,8 +100,9 @@ class RandomSimMIMExperiment(AbstractExperiment):
             accelerator="auto",
             devices=1,
             logger=mlflow_logger,
-            callbacks=[checkpoint_callback],
+            callbacks=[checkpoint_callback, vis_callback],
             precision="16-mixed",  # use half-precision
+            accumulate_grad_batches=8,
         )
         trainer.fit(model, datamodule=self.dataloader)
         self.model = model
