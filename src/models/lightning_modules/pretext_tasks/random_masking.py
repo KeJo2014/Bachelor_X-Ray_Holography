@@ -34,7 +34,7 @@ class RandomMaskingStrategy(PretextTaskAction):
     def compute_loss(
         self, preds: torch.Tensor, targets: torch.Tensor, mask_1d: torch.Tensor
     ) -> torch.Tensor:
-        """Calculates Radially Weighted Loss only on masked patches."""
+        """Calculates Loss. For RGB mode: Decouples structure (MSE) and magnetism (Radial)."""
 
         B, N = mask_1d.shape
         H_patches = self.img_size // self.patch_size
@@ -42,10 +42,32 @@ class RandomMaskingStrategy(PretextTaskAction):
 
         mask_2d_grid = mask_1d.view(B, 1, H_patches, W_patches).float()
         mask_2d_full = mask_2d_grid.repeat_interleave(self.patch_size, dim=2)
-        mask_2d_full = mask_2d_full.repeat_interleave(self.patch_size, dim=3)
-        ignore_mask = 1.0 - mask_2d_full
+        loss_mask = mask_2d_full.repeat_interleave(self.patch_size, dim=3)
 
-        loss = self.loss_function(
-            self._unpatchify(preds), self._unpatchify(targets), mask=ignore_mask
-        )
-        return loss
+        pred_img = self._unpatchify(preds)
+        target_img = self._unpatchify(targets)
+
+        C = pred_img.shape[1]
+
+        if C == 3:
+            # 1. Standard MSE Loss für Struktur (CL & CR) -> Zentrum zwingend lernen
+            mse_loss_fn = torch.nn.MSELoss(reduction="none")
+
+            loss_cl = (
+                mse_loss_fn(pred_img[:, 0:1], target_img[:, 0:1]) * loss_mask
+            ).sum() / (loss_mask.sum() + 1e-8)
+            loss_cr = (
+                mse_loss_fn(pred_img[:, 1:2], target_img[:, 1:2]) * loss_mask
+            ).sum() / (loss_mask.sum() + 1e-8)
+
+            # 2. Dein radialer Loss NUR für Magnetismus (Diff)
+            loss_diff = self.loss_function(
+                pred_img[:, 2:3], target_img[:, 2:3], mask=loss_mask
+            )
+
+            # Gewichtung: Diff-Loss wird priorisiert
+            total_loss = loss_cl + loss_cr + (5.0 * loss_diff)
+            return total_loss
+
+        else:
+            return self.loss_function(pred_img, target_img, mask=loss_mask)

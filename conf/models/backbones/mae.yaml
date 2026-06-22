@@ -17,4 +17,5 @@ parameters:
     lr: 1.5e-4
     warmup_ratio: 0.1
     weight_decay: 0.05
-  num_epochs: 1
+    channels: 3
+  num_epochs: 5

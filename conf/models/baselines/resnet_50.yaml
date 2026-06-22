@@ -8,6 +8,7 @@ model:
   lr: 0.001
   weight_decay: 0.01
   pretrained: false
+  channels: 3
 
 trainer:
   max_epochs: 1
