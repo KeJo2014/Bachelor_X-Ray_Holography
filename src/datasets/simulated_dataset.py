@@ -178,6 +178,7 @@ class HologramDataModule(AbstractDataset):
         center_holograms: bool = True,
         mode: str = None,
         add_poisson_noise: bool = False,
+        limit_samples: int = None,
     ):
         super().__init__(
             data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
@@ -187,6 +188,7 @@ class HologramDataModule(AbstractDataset):
         self.initial_crop_size = 1100
         self.add_poisson_noise = add_poisson_noise
         self.mode = mode
+        self.limit_samples = limit_samples
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size,
@@ -236,6 +238,19 @@ class HologramDataModule(AbstractDataset):
                 )
             logger.info(f"Detected classes: {label_map}")
 
+            # if specified select stratified datasubset before splitting data
+            if self.limit_samples != None and self.limit_samples < len(run_keys):
+                logger.info(
+                    f"Stratified dataset reduction of {len(run_keys)} to {self.limit_samples} instances."
+                )
+                run_keys, _, run_labels, _ = train_test_split(
+                    run_keys,
+                    run_labels,
+                    train_size=self.limit_samples,
+                    stratify=run_labels,
+                    random_state=42,
+                )
+
             # stratified group shuffle split
             train_keys, temp_keys, train_labels, temp_labels = train_test_split(
                 run_keys,
@@ -280,7 +295,7 @@ class HologramDataModule(AbstractDataset):
 
         self.setup_loaded = True
 
-    def train_dataloader(self):
+    def train_dataloader(self):  # TODO: überführe diese Klassen in abstract class
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
