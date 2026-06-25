@@ -96,7 +96,7 @@ class RandomSimMIMExperiment(AbstractExperiment):
         trainer = pl.Trainer(
             max_epochs=self.model_settings.parameters.num_epochs,
             accelerator="auto",
-            devices=1,
+            devices="auto",
             logger=mlflow_logger,
             callbacks=[checkpoint_callback, vis_callback],
             precision="16-mixed",  # use half-precision
@@ -119,7 +119,7 @@ class RandomSimMIMExperiment(AbstractExperiment):
 
         trainer = pl.Trainer(
             accelerator="auto",
-            devices=1,
+            devices="auto",
             logger=mlflow_logger,
             callbacks=[vis_callback],
         )
