@@ -55,7 +55,7 @@ class BaselineExperiment(AbstractExperiment):
         trainer = pl.Trainer(
             max_epochs=self.cfg.trainer.max_epochs,
             accelerator="auto",
-            devices=1,
+            devices="auto",
             logger=mlflow_logger,
             callbacks=[checkpoint_callback],
             precision="16-mixed",

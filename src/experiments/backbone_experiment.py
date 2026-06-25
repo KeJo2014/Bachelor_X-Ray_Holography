@@ -18,7 +18,6 @@ class MAEVisualizationCallback(Callback):
     """Callback to visualize and log first batch during testing and validation"""
 
     def __init__(self, log_every_n_epochs: int = -1):
-        print(log_every_n_epochs)
         super().__init__()
         self.log_every_n_epochs = log_every_n_epochs
 
@@ -30,7 +29,6 @@ class MAEVisualizationCallback(Callback):
             if isinstance(logger, MLFlowLogger):
                 logger.experiment.log_figure(logger.run_id, fig, filename)
         plt.close(fig)
-        print("logged: " + filename)
 
     def on_test_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
