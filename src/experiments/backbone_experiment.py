@@ -144,29 +144,36 @@ def main(cfg: DictConfig):
     datamodule.setup()
     best_val_loss = float("inf")
     variation = cfg.models.backbones
-    with mlflow.start_run(run_name=variation.name) as parent_run:
+    local_rank = os.environ.get("LOCAL_RANK", "0")
+    run_id = None
+
+    if local_rank == "0":
+        parent_run = mlflow.start_run(run_name=variation.name)
+        run_id = parent_run.info.run_id
         mlflow.log_params(variation.parameters)
-        experiment = RandomSimMIMExperiment(
-            checkpoint_dir=os.path.join(variation.checkpoint_dir),
-            dataloader=datamodule,
-            mlflow_run_id=parent_run.info.run_id,
-            config=cfg,
-            model_settings=variation,
-        )
-        ModelClass = get_class(variation.parameters.model._target_)
 
-        if not cfg.eval_only_mode:
-            model = instantiate(
-                variation.parameters.model, img_size=datamodule.img_size
-            )
-            experiment.train_model(model)
-            # get validation loss for the optuna optimizer
-            current_val_loss = experiment.model.trainer.callback_metrics.get("val/loss")
-            if current_val_loss is not None:
-                best_val_loss = min(best_val_loss, current_val_loss.item())
+    experiment = RandomSimMIMExperiment(
+        checkpoint_dir=os.path.join(variation.checkpoint_dir),
+        dataloader=datamodule,
+        mlflow_run_id=run_id,
+        config=cfg,
+        model_settings=variation,
+    )
+    ModelClass = get_class(variation.parameters.model._target_)
 
-        if not cfg.get("hyperparameter_optimization_mode", False):
-            experiment.evaluate_model(ModelClass)
+    if not cfg.eval_only_mode:
+        model = instantiate(variation.parameters.model, img_size=datamodule.img_size)
+        experiment.train_model(model)
+
+        current_val_loss = experiment.model.trainer.callback_metrics.get("val/loss")
+        if current_val_loss is not None:
+            best_val_loss = min(best_val_loss, current_val_loss.item())
+
+    if not cfg.get("hyperparameter_optimization_mode", False):
+        experiment.evaluate_model(ModelClass)
+
+    if local_rank == "0":
+        mlflow.end_run()
 
     return best_val_loss
 
