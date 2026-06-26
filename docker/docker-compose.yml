@@ -64,8 +64,7 @@ services:
 
   mlflow:
     container_name: mlflow
-    build: .
-    image: mlflow-postgres:custom
+    image: ghcr.io/mlflow/mlflow:latest
     command: >
       mlflow server 
       --host 0.0.0.0 
