@@ -5,7 +5,7 @@ networks:
 
 services:
   postgres:
-    image: postgres:17
+    image: docker.io/library/postgres:17
     container_name: mlflow_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-root}
@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
   minio-mlflow:
-    image: minio/minio:latest
+    image: docker.io/minio/minio:latest
     container_name: minio-mlflow
     command: server /data --console-address ":9001"
     ports:
@@ -45,7 +45,7 @@ services:
 
   # NEU: Automatischer Setup-Container für den Bucket
   minio-setup:
-    image: minio/mc:latest
+    image: docker.io/minio/mc:latest
     container_name: minio-setup
     depends_on:
       minio-mlflow:
