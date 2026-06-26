@@ -12,12 +12,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
       POSTGRES_DB: alMlflowDB
     ports:
-      - 5432:5432
+      - "5432:5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
     networks:
       - mlflow
     restart: unless-stopped
+
   minio-mlflow:
     image: minio/minio:latest
     container_name: minio-mlflow
@@ -30,33 +31,63 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-root}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-root}
-      MINIO_DEFAULT_BUCKETS: mlflow
     healthcheck:
-      test: timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1
-      interval: 1s
-      timeout: 10s
+      # Curl ist oft zuverlässiger im Container als TCP-Sockets über Bash
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
       retries: 5
     restart: unless-stopped
     depends_on:
       - postgres
     networks:
       - mlflow
+
+  # NEU: Automatischer Setup-Container für den Bucket
+  minio-setup:
+    image: minio/mc:latest
+    container_name: minio-setup
+    depends_on:
+      minio-mlflow:
+        condition: service_healthy
+    networks:
+      - mlflow
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Warte auf MinIO...' &&
+      mc alias set myminio http://minio-mlflow:9000 ${MINIO_ROOT_USER:-root} ${MINIO_ROOT_PASSWORD:-root} &&
+      echo 'Erstelle Bucket mlflow...' &&
+      mc mb myminio/mlflow --ignore-existing &&
+      echo 'Setup abgeschlossen.' &&
+      exit 0
+      "
+
   mlflow:
     container_name: mlflow
     build: .
     image: mlflow-postgres:custom
     command: >
-      mlflow server  --host 0.0.0.0  --port 5000  --backend-store-uri postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-password}@postgres:5432/alMlflowDB  --serve-artifacts --artifacts-destination s3://mlflow
+      mlflow server 
+      --host 0.0.0.0 
+      --port 5000 
+      --backend-store-uri postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-root}@postgres:5432/alMlflowDB 
+      --serve-artifacts 
+      --artifacts-destination s3://mlflow
     environment:
       - MLFLOW_S3_ENDPOINT_URL=http://minio-mlflow:9000
-      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY_ID:-minio_user}
-      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY:-minio_password}
+      # Angeglichen an die MinIO Zugangsdaten
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-root}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-root}
     ports:
       - "5000:5000"
     networks:
       - mlflow
     depends_on:
-      - postgres
+      postgres:
+        condition: service_started
+      minio-setup:
+        # MLflow startet erst, WENN der Bucket erfolgreich erstellt wurde
+        condition: service_completed_successfully 
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
       interval: 30s
