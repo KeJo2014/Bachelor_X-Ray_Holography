@@ -122,6 +122,7 @@ class RandomSimMIMExperiment(AbstractExperiment):
             devices="auto",
             logger=mlflow_logger,
             callbacks=[vis_callback],
+            accumulate_grad_batches=8,
         )
         trainer.test(self.model, datamodule=self.dataloader)
 

@@ -11,6 +11,7 @@ class LitUnetBaseline(pl.LightningModule):
         weight_decay: float = 0.01,
         encoder_name: str = "resnet34",
         encoder_weights: str = "imagenet",
+        channels: int = 3,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -18,11 +19,12 @@ class LitUnetBaseline(pl.LightningModule):
         self.model = smp.Unet(
             encoder_name=self.hparams.encoder_name,
             encoder_weights=self.hparams.encoder_weights,
-            in_channels=1,
+            in_channels=channels,
             classes=1,
             activation=None,
         )
 
+        self.C = channels
         self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
         metrics = get_metric_collection()
         self.train_metrics = metrics.clone(prefix="train/")

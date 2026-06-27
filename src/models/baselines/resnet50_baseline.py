@@ -12,15 +12,17 @@ class LitResnetBaseline(pl.LightningModule):
         lr: float = 1e-4,
         weight_decay: float = 0.01,
         pretrained: bool = False,
+        channels: int = 3,
     ):
         super().__init__()
         self.save_hyperparameters()
+        self.C = channels
 
         self.model = timm.create_model(
             "resnet18",
             pretrained=self.hparams.pretrained,
             num_classes=self.hparams.num_classes,
-            in_chans=1,
+            in_chans=channels,
         )
 
         metrics = get_metric_collection(num_classes=self.hparams.num_classes)

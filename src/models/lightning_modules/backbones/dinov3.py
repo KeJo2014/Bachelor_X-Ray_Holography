@@ -19,14 +19,16 @@ class Dinov3Backbone(pl.LightningModule):
         lr: float = 1.5e-4,
         weight_decay: float = 0.05,
         warmup_ratio: float = 0.1,
+        channels: int = 3,
     ):
         super().__init__()
         self.save_hyperparameters()
 
+        self.C = channels
         self.pretext_strategy = pretext_strategy
         self.patch_size = patch_size
         embed_dim = 768
-        self.pixels_per_patch = self.patch_size * self.patch_size * 1
+        self.pixels_per_patch = self.patch_size * self.patch_size * self.C
         self.grid_size = img_size // self.patch_size
 
         self.mask_token = nn.Parameter(torch.zeros(1, 1, self.pixels_per_patch))
@@ -36,7 +38,7 @@ class Dinov3Backbone(pl.LightningModule):
             "vit_base_patch16_dinov3.lvd1689m",
             pretrained=True,
             num_classes=0,
-            in_chans=1,
+            in_chans=self.C,
             global_pool="",
         )
 
