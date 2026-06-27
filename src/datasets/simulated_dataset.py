@@ -405,6 +405,7 @@ if __name__ == "__main__":
 
             fig.suptitle(
                 f"Hologram Overview | Class: {class_name}",
+                f"Hologram Overview | Class: {class_name}",
                 fontsize=14,
                 fontweight="bold",
             )
@@ -425,21 +426,21 @@ if __name__ == "__main__":
         init_diff = holo_init[0][2].squeeze().numpy()
 
         img_cl = ax1.imshow(init_cl, cmap="viridis")
-        ax1.set_title("Kanal 0: CL")
+        ax1.set_title("Channel 0: CL")
         fig.colorbar(img_cl, ax=ax1, fraction=0.046, pad=0.04)
 
         img_cr = ax2.imshow(init_cr, cmap="viridis")
-        ax2.set_title("Kanal 1: CR")
+        ax2.set_title("Channel 1: CR")
         fig.colorbar(img_cr, ax=ax2, fraction=0.046, pad=0.04)
 
         img_diff = ax3.imshow(init_diff, cmap="coolwarm")
-        ax3.set_title("Kanal 2: Diff (CL - CR)")
+        ax3.set_title("Channel 2: Diff")
         max_init_val = max(abs(init_diff.min()), abs(init_diff.max()))
         img_diff.set_clim(vmin=-max_init_val, vmax=max_init_val)
         fig.colorbar(img_diff, ax=ax3, fraction=0.046, pad=0.04)
 
         img_mask = ax4.imshow(mask_init, cmap="gray")
-        ax4.set_title("Beamstop Maske")
+        ax4.set_title("Beamstop Mask")
         fig.colorbar(img_mask, ax=ax4, fraction=0.046, pad=0.04)
 
     else:
