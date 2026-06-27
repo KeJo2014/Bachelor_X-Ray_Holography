@@ -450,9 +450,7 @@ if __name__ == "__main__":
 
         cmap = "coolwarm" if data_module.mode == "diff" else "viridis"
         img_single = ax1.imshow(init_single, cmap=cmap)
-        ax1.set_title(
-            "Hologram (RAW)" if data_module.mode == "raw" else "Diff-Holo"
-        )
+        ax1.set_title("Hologram (RAW)" if data_module.mode == "raw" else "Diff-Holo")
 
         if data_module.mode == "diff":
             max_init_val = max(abs(init_single.min()), abs(init_single.max()))
