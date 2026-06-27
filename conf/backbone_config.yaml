@@ -1,5 +1,5 @@
 defaults:
-  - models/backbones: unet
+  - models/backbones: mae
   - override hydra/sweeper: optuna
   - override hydra/launcher: submitit_slurm
 
@@ -21,7 +21,7 @@ hydra:
     direction: minimize
     study_name: Backbone Hyperparameter Optimization
     storage: "sqlite:///optuna.db"
-    n_trials: 20
+    n_trials: 50
     n_jobs: 1
     params:
       models.backbones.parameters.model.lr: interval(1e-5, 5e-4)
@@ -33,12 +33,15 @@ loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
 hyperparameter_optimization_mode: false
+eval_only_mode: false
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
   data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\simulation_sweep_1.h5"
-  mode: rgb
-  center_holograms: True
+  mode: "raw"
+  add_poisson_noise: false
+  center_holograms: true
+  limit_samples: 2
 
 experiments:
-  batch_size: 1
+  batch_size: 2

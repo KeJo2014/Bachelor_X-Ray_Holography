@@ -1,65 +1,74 @@
 name: Bachelor_mlflow
 
-networks:
-  mlflow:
-
 services:
   postgres:
-    image: postgres:17
+    image: docker.io/library/postgres:17
     container_name: mlflow_postgres
+    network_mode: host
+    security_opt:
+      - seccomp=unconfined
+      - label=disable
+      - apparmor=unconfined
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-root}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-root}
       POSTGRES_DB: alMlflowDB
-    ports:
-      - 5432:5432
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - ./postgres_data:/var/lib/postgresql/data
-    networks:
-      - mlflow
+      - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+
   minio-mlflow:
-    image: minio/minio:latest
+    image: docker.io/minio/minio:latest
     container_name: minio-mlflow
+    network_mode: host
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     volumes:
       - './minio_data:/data'
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-root}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-root}
-      MINIO_DEFAULT_BUCKETS: mlflow
-    healthcheck:
-      test: timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1
-      interval: 1s
-      timeout: 10s
-      retries: 5
     restart: unless-stopped
-    depends_on:
-      - postgres
-    networks:
-      - mlflow
+
+  minio-setup:
+    image: docker.io/minio/mc:latest
+    container_name: minio-setup
+    network_mode: host
+    security_opt:
+      - seccomp=unconfined
+      - label=disable
+      - apparmor=unconfined
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Warte 10 Sekunden auf den MinIO Server...' &&
+      sleep 10 &&
+      mc alias set myminio http://127.0.0.1:9000 ${MINIO_ROOT_USER:-root} ${MINIO_ROOT_PASSWORD:-root} &&
+      echo 'Erstelle Bucket mlflow...' &&
+      mc mb myminio/mlflow --ignore-existing &&
+      echo 'Setup abgeschlossen.' &&
+      exit 0
+      "
+
   mlflow:
     container_name: mlflow
-    build: .
-    image: mlflow-postgres:custom
+    image: ghcr.io/mlflow/mlflow:latest
+    network_mode: host
+    security_opt:
+      - seccomp=unconfined
+      - label=disable
+      - apparmor=unconfined
     command: >
-      mlflow server  --host 0.0.0.0  --port 5000  --backend-store-uri postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-password}@postgres:5432/alMlflowDB  --serve-artifacts --artifacts-destination s3://mlflow
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-root}@127.0.0.1:5432/alMlflowDB
+      --serve-artifacts
+      --artifacts-destination s3://mlflow
     environment:
-      - MLFLOW_S3_ENDPOINT_URL=http://minio-mlflow:9000
-      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY_ID:-minio_user}
-      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_ACCESS_KEY:-minio_password}
-    ports:
-      - "5000:5000"
-    networks:
-      - mlflow
-    depends_on:
-      - postgres
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:5000/health" ]
-      interval: 30s
-      timeout: 5s
-      retries: 5
+      - MLFLOW_S3_ENDPOINT_URL=http://127.0.0.1:9000
+      - AWS_ACCESS_KEY_ID=${MINIO_ROOT_USER:-root}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD:-root}
     restart: unless-stopped
+
+volumes:
+  postgres_data:

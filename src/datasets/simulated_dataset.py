@@ -61,6 +61,7 @@ class HologramDataset(Dataset):
         label_map,
         transform=None,
         mode: str = "raw",
+        add_poisson_noise: bool = False,
     ):
         """
         :param h5_filepath: path to the h5 data file
@@ -68,12 +69,14 @@ class HologramDataset(Dataset):
         :param label_map: dict mapping labels to class integers
         :param transform: pytorch transformation
         :param mode: "raw" (1-chan CL/CR), "diff" (1-chan Diff), or "rgb" (3-chan CL, CR, Diff)
+        :param add_poisson_noise: If true, applies shot noise to raw photon counts
         """
         self.h5_filepath = h5_filepath
         self.run_keys = run_keys
         self.label_map = label_map
         self.transform = transform
         self.mode = mode
+        self.add_poisson_noise = add_poisson_noise
         self.h5_file = None
 
     def open_hdf5(self):
@@ -109,7 +112,6 @@ class HologramDataset(Dataset):
     def __getitem__(self, idx):
         self.open_hdf5()
 
-        # Adjust run_idx based on mode
         run_idx = idx // 2 if self.mode == "raw" else idx
         run_key = self.run_keys[run_idx]
         run_data = self.h5_file[run_key]
@@ -125,6 +127,11 @@ class HologramDataset(Dataset):
 
         holo_cl = np.squeeze(run_data["CL"]["detected"][:])
         holo_cr = np.squeeze(run_data["CR"]["detected"][:])
+
+        # apply poisson shot noise
+        if self.add_poisson_noise:
+            holo_cl = np.random.poisson(np.clip(holo_cl, 0, None)).astype(np.float32)
+            holo_cr = np.random.poisson(np.clip(holo_cr, 0, None)).astype(np.float32)
 
         if self.mode == "rgb":
             holo_diff = holo_cl - holo_cr
@@ -170,6 +177,8 @@ class HologramDataModule(AbstractDataset):
         num_workers: int = min(8, max(1, (os.cpu_count() or 1) - 3)),
         center_holograms: bool = True,
         mode: str = None,
+        add_poisson_noise: bool = False,
+        limit_samples: int = None,
     ):
         super().__init__(
             data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
@@ -177,7 +186,9 @@ class HologramDataModule(AbstractDataset):
         self.img_size = 960
         self.setup_loaded = False
         self.initial_crop_size = 1100
+        self.add_poisson_noise = add_poisson_noise
         self.mode = mode
+        self.limit_samples = limit_samples
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size,
@@ -189,7 +200,6 @@ class HologramDataModule(AbstractDataset):
         if self.setup_loaded:
             return
 
-        # open file to discover keys and classes
         with h5py.File(self.data_dir, "r") as f:
             data = f
             run_keys = [k for k in f.keys() if k != "_pipeline_config"]
@@ -220,14 +230,28 @@ class HologramDataModule(AbstractDataset):
 
             if self.mode != "raw":
                 logger.info(
-                    f"Found {len(run_keys)} total samples from {len(run_keys)} runs. Mode: {self.mode.upper()}"
+                    f"Found {len(run_keys)} total samples from {len(run_keys)} runs. Mode: {self.mode.upper()} | Poisson Noise: {self.add_poisson_noise}"
                 )
             else:
                 logger.info(
-                    f"Found {len(run_keys)*2} total samples from {len(run_keys)} runs. Mode: RAW"
+                    f"Found {len(run_keys)*2} total samples from {len(run_keys)} runs. Mode: RAW | Poisson Noise: {self.add_poisson_noise}"
                 )
             logger.info(f"Detected classes: {label_map}")
 
+            # if specified select stratified datasubset before splitting data
+            if self.limit_samples != None and self.limit_samples < len(run_keys):
+                logger.info(
+                    f"Stratified dataset reduction of {len(run_keys)} to {self.limit_samples} instances."
+                )
+                run_keys, _, run_labels, _ = train_test_split(
+                    run_keys,
+                    run_labels,
+                    train_size=self.limit_samples,
+                    stratify=run_labels,
+                    random_state=42,
+                )
+
+            # stratified group shuffle split
             train_keys, temp_keys, train_labels, temp_labels = train_test_split(
                 run_keys,
                 run_labels,
@@ -250,6 +274,7 @@ class HologramDataModule(AbstractDataset):
             label_map,
             transform=self.transform,
             mode=self.mode,
+            add_poisson_noise=self.add_poisson_noise,
         )
         self.val_dataset = HologramDataset(
             self.data_dir,
@@ -257,6 +282,7 @@ class HologramDataModule(AbstractDataset):
             label_map,
             transform=self.transform,
             mode=self.mode,
+            add_poisson_noise=self.add_poisson_noise,
         )
         self.test_dataset = HologramDataset(
             self.data_dir,
@@ -264,11 +290,12 @@ class HologramDataModule(AbstractDataset):
             label_map,
             transform=self.transform,
             mode=self.mode,
+            add_poisson_noise=self.add_poisson_noise,
         )
 
         self.setup_loaded = True
 
-    def train_dataloader(self):
+    def train_dataloader(self):  # TODO: überführe diese Klassen in abstract class
         return DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -303,11 +330,16 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
 
+    # Initialize data module
     data_path = "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\simulation_sweep_1.h5"
-    current_mode = "rgb"  # rgb, raw, diff
+    current_mode = "rgb"  # options: rgb, raw, diff
+    current_noise = True
 
     data_module = HologramDataModule(
-        data_path, mode=current_mode, center_holograms=True
+        data_path,
+        mode=current_mode,
+        center_holograms=True,
+        add_poisson_noise=current_noise,
     )
     data_module.setup()
     train_loader = data_module.train_dataloader()
@@ -372,13 +404,14 @@ if __name__ == "__main__":
             img_mask.set_data(m)
 
             fig.suptitle(
-                f"Hologramm Übersicht | Klasse: {class_name}",
+                f"Hologram Overview | Class: {class_name}",
                 fontsize=14,
                 fontweight="bold",
             )
             fig.canvas.draw_idle()
 
     viewer = ViewerState(train_loader, inv_label_map, data_module.mode)
+
     holo_init, label_init, mask_init_batch = viewer.current_batch
     mask_init = mask_init_batch[0].squeeze(0).numpy()
     init_class = inv_label_map[torch.argmax(label_init[0]).item()]
@@ -418,7 +451,7 @@ if __name__ == "__main__":
         cmap = "coolwarm" if data_module.mode == "diff" else "viridis"
         img_single = ax1.imshow(init_single, cmap=cmap)
         ax1.set_title(
-            "Hologramm (RAW)" if data_module.mode == "raw" else "Differenz-Hologramm"
+            "Hologram (RAW)" if data_module.mode == "raw" else "Diff-Holo"
         )
 
         if data_module.mode == "diff":
@@ -438,7 +471,7 @@ if __name__ == "__main__":
     )
 
     ax_button = plt.axes([0.45, 0.05, 0.1, 0.06])
-    btn_next = Button(ax_button, "Nächstes Bild")
+    btn_next = Button(ax_button, "Next")
     btn_next.on_clicked(viewer.next_image)
 
     plt.show()

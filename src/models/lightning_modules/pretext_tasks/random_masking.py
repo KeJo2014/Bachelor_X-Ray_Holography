@@ -50,7 +50,6 @@ class RandomMaskingStrategy(PretextTaskAction):
         C = pred_img.shape[1]
 
         if C == 3:
-            # 1. Standard MSE Loss für Struktur (CL & CR) -> Zentrum zwingend lernen
             mse_loss_fn = torch.nn.MSELoss(reduction="none")
 
             loss_cl = (
@@ -60,12 +59,10 @@ class RandomMaskingStrategy(PretextTaskAction):
                 mse_loss_fn(pred_img[:, 1:2], target_img[:, 1:2]) * loss_mask
             ).sum() / (loss_mask.sum() + 1e-8)
 
-            # 2. Dein radialer Loss NUR für Magnetismus (Diff)
             loss_diff = self.loss_function(
                 pred_img[:, 2:3], target_img[:, 2:3], mask=loss_mask
             )
 
-            # Gewichtung: Diff-Loss wird priorisiert
             total_loss = loss_cl + loss_cr + (5.0 * loss_diff)
             return total_loss
 
