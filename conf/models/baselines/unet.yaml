@@ -7,6 +7,7 @@ model:
   lr: 0.001
   weight_decay: 0.01
   encoder_name: "tu-convnext_base.dinov3_lvd1689m"  # tu-convnext_base.dinov3_lvd1689m
+  channels: 3
 
 trainer:
   max_epochs: 1

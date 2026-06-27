@@ -4,7 +4,7 @@ parameters:
   model:
     _target_: models.lightning_modules.backbones.sim_mim.LitSimMIM
     pretext_strategy:
-      _target_: models.lightning_modules.pretext_tasks.random_real_space_masking.RandomMaskingRealSpaceStrategy
+      _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
       img_size: 960
       patch_size: 16
       mask_ratio: 0.75
@@ -14,4 +14,5 @@ parameters:
     lr: 1.5e-4
     warmup_ratio: 0.1
     weight_decay: 0.05
-  num_epochs: 1
+    channels: 1
+  num_epochs: 5

@@ -16,95 +16,158 @@ def _apply_inverse_fourier_transform(input_image: torch.Tensor) -> torch.Tensor:
 def visualize_mae_results(model: LightningModule, batch_x: torch.Tensor, num_images=3):
     """
     Plot original input, masked input and reconstructed version of input.
+    Supports 1-channel and 3-channel (CL, CR, Diff) inputs.
 
     :param model: trained masked autoencoder model
-    :param batch_x: Batch of images of type [B, 1, H, W]
+    :param batch_x: Batch of images of type [B, C, H, W]
     :param num_images: Optional input to specify the number of displayed instances.
     Must not be greater than batch size
     """
     num_images = min(num_images, batch_x.shape[0])
+    C = batch_x.shape[1]
     model.eval()
 
     with torch.no_grad():
         batch_x = batch_x.to(model.device)
         preds, _, mask_img, _ = model(batch_x)
-
-        # retransform prediction to 2d image
         pred_img = model.unpatchify(preds)
 
-        # if necessary expand mask to patch size
-        if pred_img.size() != mask_img.size():
-            mask_expanded = mask_img.unsqueeze(-1).repeat(1, 1, model.pixels_per_patch)
-            mask_img = model.unpatchify(mask_expanded)
-
-        # build final reconstruction and masked version
+        # Build final reconstruction and masked version
         reconstruction = pred_img * mask_img + batch_x * (1 - mask_img)
         masked_input = batch_x * (1 - mask_img)
 
-        # calculate real space versions
+        # Calculate real space versions
         real_space_reconstruction = _apply_inverse_fourier_transform(reconstruction)
         original_real_space_reconstruction = _apply_inverse_fourier_transform(batch_x)
 
-    fig, axes = plt.subplots(num_images, 8, figsize=(25, 4 * num_images))
+    # Start plotting
+    cols = 8 if C == 1 else 10
+    fig, axes = plt.subplots(num_images, cols, figsize=(3.5 * cols, 4 * num_images))
     if num_images == 1:
         axes = [axes]
 
+    def _plot_ax(ax, img, title, cmap="gray", vmin=0, vmax=1):
+        ax.imshow(img, cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_title(title)
+        ax.axis("off")
+
+    mask_ratio_pct = int(getattr(model.hparams, "mask_ratio", 0) * 100)
+
     for i in range(num_images):
-        orig_img = batch_x[i][0].cpu().numpy()
-        mask_img_plot = masked_input[i][0].cpu().numpy()
-        recon_img = reconstruction[i][0].cpu().numpy()
+        if C == 1:
+            # Simple Visualization for one Channel case
+            orig_img = batch_x[i][0].cpu().numpy()
+            mask_img_plot = masked_input[i][0].cpu().numpy()
+            recon_img = reconstruction[i][0].cpu().numpy()
 
-        realspace_magnitude = real_space_reconstruction[i][0].abs().cpu().numpy()
-        orig_realspace_magnitude = (
-            original_real_space_reconstruction[i][0].abs().cpu().numpy()
-        )
-        diff_magnitude = np.abs(orig_realspace_magnitude - realspace_magnitude)
-        real_part = real_space_reconstruction[i][0].real.cpu().numpy()
-        imag_part = real_space_reconstruction[i][0].imag.cpu().numpy()
+            realspace_mag = real_space_reconstruction[i][0].abs().cpu().numpy()
+            orig_realspace_mag = (
+                original_real_space_reconstruction[i][0].abs().cpu().numpy()
+            )
+            diff_mag = np.abs(orig_realspace_mag - realspace_mag)
 
-        # original hologram
-        axes[i][0].imshow(orig_img, cmap="gray", vmin=0, vmax=1)
-        axes[i][0].set_title("Original")
-        axes[i][0].axis("off")
+            real_part = real_space_reconstruction[i][0].real.cpu().numpy()
+            imag_part = real_space_reconstruction[i][0].imag.cpu().numpy()
 
-        # masked hologram
-        axes[i][1].imshow(mask_img_plot, cmap="gray", vmin=0, vmax=1)
-        axes[i][1].set_title(f"Masked ({(model.hparams.mask_ratio*100):.0f}%)")
-        axes[i][1].axis("off")
+            vmax_diff = max(np.percentile(diff_mag, 99.0), 1e-5)
+            vmax_real = np.percentile(np.abs(real_part), 99.0)
+            vmax_imag = np.percentile(np.abs(imag_part), 99.0)
 
-        # reconstructed hologram fourier
-        axes[i][2].imshow(recon_img, cmap="gray", vmin=0, vmax=1)
-        axes[i][2].set_title("Fourier Space")
-        axes[i][2].axis("off")
+            _plot_ax(axes[i][0], orig_img, "Original", vmin=0, vmax=1)
+            _plot_ax(
+                axes[i][1], mask_img_plot, f"Masked ({mask_ratio_pct}%)", vmin=0, vmax=1
+            )
+            _plot_ax(axes[i][2], recon_img, "Fourier Space")
+            _plot_ax(axes[i][3], orig_realspace_mag, "Original Real Space Magnitude")
+            _plot_ax(axes[i][4], realspace_mag, "Real Space Magnitude")
+            _plot_ax(
+                axes[i][5],
+                diff_mag,
+                "Difference Real Space Magnitude",
+                cmap="hot",
+                vmax=vmax_diff,
+            )
+            _plot_ax(
+                axes[i][6],
+                real_part,
+                "Real Space (Real Part)",
+                cmap="RdBu",
+                vmin=-vmax_real,
+                vmax=vmax_real,
+            )
+            _plot_ax(
+                axes[i][7],
+                imag_part,
+                "Real Space (Imaginary Part)",
+                cmap="RdBu",
+                vmin=-vmax_imag,
+                vmax=vmax_imag,
+            )
 
-        # original real space magnitude
-        axes[i][3].imshow(orig_realspace_magnitude, cmap="gray", vmin=0, vmax=1)
-        axes[i][3].set_title("Original Real Space Magnitude")
-        axes[i][3].axis("off")
+        else:
+            # 3 channel visualization
+            orig_cl = batch_x[i][0].cpu().numpy()
+            recon_cl = reconstruction[i][0].cpu().numpy()
 
-        # real space magnitude
-        axes[i][4].imshow(realspace_magnitude, cmap="gray", vmin=0, vmax=1)
-        axes[i][4].set_title("Real Space Magnitude")
-        axes[i][4].axis("off")
+            orig_cr = batch_x[i][1].cpu().numpy()
+            recon_cr = reconstruction[i][1].cpu().numpy()
 
-        # show difference image between original real space magnitude and reconstructed real space magnitude
-        vmax_diff = np.percentile(diff_magnitude, 99.0)
-        vmax_diff = vmax_diff if vmax_diff > 0 else 1e-5
-        axes[i][5].imshow(diff_magnitude, cmap="hot", vmin=0, vmax=vmax_diff)
-        axes[i][5].set_title("Difference Real Space Magnitude")
-        axes[i][5].axis("off")
+            orig_diff = batch_x[i][2].cpu().numpy()
+            masked_diff = masked_input[i][2].cpu().numpy()
+            recon_diff = reconstruction[i][2].cpu().numpy()
 
-        # real space - Real part
-        vmax_real = np.percentile(np.abs(real_part), 99.0)
-        axes[i][6].imshow(real_part, cmap="RdBu", vmin=-vmax_real, vmax=vmax_real)
-        axes[i][6].set_title("Real Space (Real Part)")
-        axes[i][6].axis("off")
+            realspace_mag = real_space_reconstruction[i][2].abs().cpu().numpy()
+            orig_realspace_mag = (
+                original_real_space_reconstruction[i][2].abs().cpu().numpy()
+            )
+            diff_mag = np.abs(orig_realspace_mag - realspace_mag)
 
-        # real space - Imaginary part
-        vmax_imag = np.percentile(np.abs(imag_part), 99.0)
-        axes[i][7].imshow(imag_part, cmap="RdBu", vmin=-vmax_imag, vmax=vmax_imag)
-        axes[i][7].set_title("Real Space (Imaginary Part)")
-        axes[i][7].axis("off")
+            max_orig_diff = max(abs(orig_diff.min()), abs(orig_diff.max()))
+            vmax_error = max(np.percentile(diff_mag, 99.0), 1e-5)
+
+            # CL & CR structure
+            _plot_ax(axes[i][0], orig_cl, "Orig CL", cmap="viridis", vmin=0, vmax=1)
+            _plot_ax(axes[i][1], recon_cl, "Recon CL", cmap="viridis", vmin=0, vmax=1)
+
+            _plot_ax(axes[i][2], orig_cr, "Orig CR", cmap="viridis", vmin=0, vmax=1)
+            _plot_ax(axes[i][3], recon_cr, "Recon CR", cmap="viridis", vmin=0, vmax=1)
+
+            # diff holo
+            _plot_ax(
+                axes[i][4],
+                orig_diff,
+                "Orig Diff",
+                cmap="coolwarm",
+                vmin=-max_orig_diff,
+                vmax=max_orig_diff,
+            )
+            _plot_ax(
+                axes[i][5],
+                masked_diff,
+                f"Masked Diff ({mask_ratio_pct}%)",
+                cmap="coolwarm",
+                vmin=-max_orig_diff,
+                vmax=max_orig_diff,
+            )
+            _plot_ax(
+                axes[i][6],
+                recon_diff,
+                "Recon Diff",
+                cmap="coolwarm",
+                vmin=-max_orig_diff,
+                vmax=max_orig_diff,
+            )
+
+            # real space error based on diff channel
+            _plot_ax(
+                axes[i][7], orig_realspace_mag, "Orig Real (Diff)", vmin=None, vmax=None
+            )
+            _plot_ax(
+                axes[i][8], realspace_mag, "Recon Real (Diff)", vmin=None, vmax=None
+            )
+            _plot_ax(
+                axes[i][9], diff_mag, "Real Error (Diff)", cmap="hot", vmax=vmax_error
+            )
 
     plt.tight_layout()
     return fig

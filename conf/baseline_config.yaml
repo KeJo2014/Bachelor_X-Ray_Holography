@@ -1,5 +1,5 @@
 defaults:
-  - models/baselines: resnet_50
+  - models/baselines: unet
   - override hydra/sweeper: optuna
   - override hydra/launcher: submitit_slurm
 
@@ -36,3 +36,5 @@ hyperparameter_optimization_mode: false
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
   data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\simulation_sweep_1.h5"
+  mode: rgb
+  center_holograms: True

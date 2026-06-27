@@ -2,6 +2,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import timm
+import torch.nn.functional as F
 
 from typing import Tuple
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
@@ -22,6 +23,7 @@ class LitMAE(pl.LightningModule):
         lr: float = 1.5e-4,
         weight_decay: float = 0.05,
         warmup_ratio: float = 0.1,
+        channels: int = 3,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -30,13 +32,14 @@ class LitMAE(pl.LightningModule):
         self.patch_size = patch_size
         self.grid_size = img_size // patch_size
         self.num_patches = self.grid_size**2
-        self.pixels_per_patch = patch_size * patch_size * 1
+        self.pixels_per_patch = patch_size * patch_size * channels
+        self.C = channels
 
         self.encoder = timm.create_model(
             "vit_base_patch16_224",
             img_size=img_size,
             patch_size=patch_size,
-            in_chans=1,
+            in_chans=self.C,
             pretrained=False,
             num_classes=0,
             global_pool="",
@@ -82,10 +85,9 @@ class LitMAE(pl.LightningModule):
         """Cuts image of shape [B, C, H, W] in patches [B, Num_Patches, Patch_Size^2 * C]."""
         p = self.patch_size
         h = w = self.grid_size
-        c = 1
-        x = imgs.reshape(shape=(imgs.shape[0], c, h, p, w, p))
+        x = imgs.reshape(shape=(imgs.shape[0], self.C, h, p, w, p))
         x = torch.einsum("nchpwq->nhwpqc", x)
-        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * c))
+        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * self.C))
         return x
 
     def unpatchify(self, x: torch.Tensor) -> torch.Tensor:
@@ -94,11 +96,10 @@ class LitMAE(pl.LightningModule):
         """
         p = self.patch_size
         h = w = self.grid_size
-        c = 1
 
-        x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, self.C))
         x = torch.einsum("nhwpqc->nchpwq", x)
-        imgs = x.reshape(shape=(x.shape[0], c, h * p, w * p))
+        imgs = x.reshape(shape=(x.shape[0], self.C, h * p, w * p))
 
         return imgs
 
@@ -138,11 +139,8 @@ class LitMAE(pl.LightningModule):
         self, x: torch.Tensor, ids_restore: torch.Tensor
     ) -> torch.Tensor:
         B = x.shape[0]
-
-        # project in decoder dimension
         x = self.decoder_embed(x)
 
-        # seperate class token
         cls_token = x[:, :1, :]
         x_visible = x[:, 1:, :]
 
@@ -164,55 +162,60 @@ class LitMAE(pl.LightningModule):
         for blk in self.decoder_blocks:
             x = blk(x)
         x = self.decoder_norm(x)
-
-        # reconstruct pixel and discard CLS token
         x = self.decoder_pred(x[:, 1:, :])
         return x
 
     def forward(
         self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         latent, ids_restore, ids_keep = self.forward_encoder(x)
-
         pred = self.forward_decoder(latent, ids_restore)
-        target = self.patchify(x)
 
         B = x.shape[0]
-        mask = torch.ones([B, self.num_patches], device=x.device)
-        mask[:, : ids_keep.shape[1]] = 0
-        mask = torch.gather(mask, dim=1, index=ids_restore)
+        mask_1d = torch.ones([B, self.num_patches], device=x.device)
+        mask_1d[:, : ids_keep.shape[1]] = 0
+        mask_1d = torch.gather(mask_1d, dim=1, index=ids_restore)
 
-        return pred, target, mask, x
+        mask_img = F.interpolate(
+            mask_1d.view(B, 1, self.grid_size, self.grid_size).float(),
+            size=(self.hparams.img_size, self.hparams.img_size),
+            mode="nearest",
+        )
+
+        return pred, mask_1d, mask_img, x
 
     def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, label, dataset_mask = batch
-        pred, target, mask, _ = self(x)
-        mask_1d = mask.bool()
-        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d)
+        pred, mask_1d, _, _ = self(x)
+        target = self.patchify(x)
+
+        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d.bool())
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         return loss
 
     def test_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, label, dataset_mask = batch
-        pred, target, mask, _ = self(x)
-        mask_1d = mask.bool()
-        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d)
+        pred, mask_1d, _, _ = self(x)
+        target = self.patchify(x)
+
+        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d.bool())
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: Tuple[torch.Tensor, torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, label, dataset_mask = batch
-        pred, target, mask, _ = self(x)
-        mask_1d = mask.bool()
-        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d)
+        pred, mask_1d, _, _ = self(x)
+        target = self.patchify(x)
+
+        loss = self.pretext_strategy.compute_loss(pred, target, mask_1d.bool())
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss

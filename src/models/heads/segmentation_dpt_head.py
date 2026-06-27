@@ -4,15 +4,16 @@ import segmentation_models_pytorch as smp
 
 
 class DPTSegmentationHead(nn.Module):
-    def __init__(self, encoder_name: str):
+    def __init__(self, encoder_name: str, channels: int = 3):
         super().__init__()
         num_classes = 1
         self.needs_full_image = True
+        self.C = channels
 
         self.smp_model = smp.DPT(
             encoder_name=encoder_name,  # needs to be fitting the base architecture
             encoder_weights=None,
-            in_channels=1,
+            in_channels=self.C,
             classes=num_classes,
         )
 

@@ -8,10 +8,12 @@ import glob
 from abc import ABC, abstractmethod
 from omegaconf import DictConfig, OmegaConf
 from models.lightning_modules.pretext_tasks import PRETEXT_STRATEGIES
+from models.loss_functions import LOSS_FUNCTIONS
 
 logger = logging.getLogger(__name__)
 
 torch.serialization.add_safe_globals(PRETEXT_STRATEGIES)
+torch.serialization.add_safe_globals(LOSS_FUNCTIONS)
 
 
 class AbstractExperiment(ABC):
