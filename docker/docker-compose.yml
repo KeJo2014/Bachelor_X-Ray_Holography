@@ -23,6 +23,10 @@ services:
     container_name: minio-mlflow
     network_mode: host
     command: server /data --console-address ":9001"
+    security_opt:
+      - seccomp=unconfined
+      - label=disable
+      - apparmor=unconfined
     volumes:
       - './minio_data:/data'
     environment:
@@ -60,7 +64,8 @@ services:
     command: >
       mlflow server
       --host 0.0.0.0
-      --port 5000
+      --port 8000
+      --allowed-hosts "cpu-xeon-1,cpu-xeon-1:8000,localhost:8000"
       --backend-store-uri postgresql://${POSTGRES_USER:-root}:${POSTGRES_PASSWORD:-root}@127.0.0.1:5432/alMlflowDB
       --serve-artifacts
       --artifacts-destination s3://mlflow

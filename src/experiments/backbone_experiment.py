@@ -22,6 +22,8 @@ class MAEVisualizationCallback(Callback):
         self.log_every_n_epochs = log_every_n_epochs
 
     def _log_visualization(self, trainer, pl_module, batch, filename):
+        if not trainer.is_global_zero:
+            return
         batch_x, _, _ = batch
         fig = visualize_mae_results(pl_module, batch_x)
 
@@ -122,7 +124,7 @@ class RandomSimMIMExperiment(AbstractExperiment):
             devices="auto",
             logger=mlflow_logger,
             callbacks=[vis_callback],
-            accumulate_grad_batches=8,
+            accumulate_grad_batches=2,
         )
         trainer.test(self.model, datamodule=self.dataloader)
 
@@ -145,7 +147,7 @@ def main(cfg: DictConfig):
     datamodule.setup()
     best_val_loss = float("inf")
     variation = cfg.models.backbones
-    local_rank = os.environ.get("LOCAL_RANK", "0")
+    local_rank = os.environ.get("SLURM_PROCID", "0")
     run_id = None
 
     if local_rank == "0":
@@ -172,9 +174,6 @@ def main(cfg: DictConfig):
 
     if not cfg.get("hyperparameter_optimization_mode", False):
         experiment.evaluate_model(ModelClass)
-
-    if local_rank == "0":
-        mlflow.end_run()
 
     return best_val_loss
 

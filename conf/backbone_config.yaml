@@ -39,9 +39,9 @@ datamodule:
   _target_: datasets.simulated_dataset.HologramDataModule
   data_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\Raw_holo_sim\\simulation_sweep_1.h5"
   mode: "raw"
-  add_poisson_noise: false
+  # add_poisson_noise: false
   center_holograms: true
-  limit_samples: 2
+  limit_samples: 60
 
 experiments:
-  batch_size: 2
+  batch_size: 1

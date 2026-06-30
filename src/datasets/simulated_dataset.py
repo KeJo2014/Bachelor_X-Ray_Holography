@@ -303,6 +303,8 @@ class HologramDataModule(AbstractDataset):
             num_workers=self.num_workers,
             drop_last=True,
             persistent_workers=True,
+            prefetch_factor=2,
+            pin_memory=True,
         )
 
     def test_dataloader(self):
