@@ -15,7 +15,7 @@ task:
   
   head:
     _target_: models.heads.segmentation_dpt_head.DPTSegmentationHead
-    encoder_name: "tu-vit_base_patch16_224" # or "tu-vit_base_patch16_dinov3.lvd1689m" for Dinov3
+    encoder_name: "tu-vit_base_patch8_224" # or "tu-vit_base_patch8_dinov3.lvd1689m" for Dinov3
     channels: 3
 
 trainer:

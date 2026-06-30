@@ -17,8 +17,8 @@ task:
     _target_: models.heads.segmentation_head.ViTSegmentationHead
     embed_dim: 768
     num_classes: 1
-    img_size: 960
-    patch_size: 16
+    patch_size: 224
+    patch_size: 8
 
 trainer:
   max_epochs: 1

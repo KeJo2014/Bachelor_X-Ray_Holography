@@ -183,9 +183,9 @@ class HologramDataModule(AbstractDataset):
         super().__init__(
             data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
         )
-        self.img_size = 960
+        self.img_size = 224
         self.setup_loaded = False
-        self.initial_crop_size = 1100
+        self.initial_crop_size = 500
         self.add_poisson_noise = add_poisson_noise
         self.mode = mode
         self.limit_samples = limit_samples

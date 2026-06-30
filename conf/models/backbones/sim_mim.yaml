@@ -5,10 +5,10 @@ parameters:
     _target_: models.lightning_modules.backbones.sim_mim.LitSimMIM
     pretext_strategy:
       _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
-      img_size: 960
-      patch_size: 16
+      patch_size: 224
+      patch_size: 8
       mask_ratio: 0.75
-    patch_size: 16
+    patch_size: 8
     embed_dim: 768
     mask_ratio: 0.75
     lr: 1.5e-4
