@@ -46,11 +46,25 @@ class LitResnetBaseline(pl.LightningModule):
             on_step=(prefix == "train"),
             on_epoch=True,
             prog_bar=True,
+            sync_dist=True,
         )
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self._shared_step(batch, batch_idx, self.train_metrics, "train")
+        x, y, _ = batch
+        logits = self(x)
+
+        loss = F.binary_cross_entropy_with_logits(logits, y.float())
+        self.train_metrics.update(logits, y.long())
+
+        self.log(
+            f"train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        return loss
 
     def validation_step(self, batch, batch_idx):
         return self._shared_step(batch, batch_idx, self.val_metrics, "val")

@@ -100,7 +100,21 @@ class LitSegmentationTask(pl.LightningModule):
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self._shared_step(batch, batch_idx, self.train_metrics, "train")
+        x, _, y_mask = batch
+        logits = self(x)
+
+        loss = self.loss_function(logits, y_mask)
+        probs = torch.sigmoid(logits)
+        self.train_metrics.update(probs, (y_mask > 0.5).long())
+
+        self.log(
+            f"train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        return loss
 
     def validation_step(self, batch, batch_idx):
         return self._shared_step(batch, batch_idx, self.val_metrics, "val")

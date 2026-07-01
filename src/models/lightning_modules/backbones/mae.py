@@ -45,7 +45,6 @@ class LitMAE(pl.LightningModule):
             global_pool="",
         )
 
-        # DECODER
         # projection from encoder to decoder space
         self.decoder_embed = nn.Linear(embed_dim, decoder_embed_dim, bias=True)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim))
@@ -205,7 +204,14 @@ class LitMAE(pl.LightningModule):
 
         loss = self.pretext_strategy.compute_loss(pred, target, mask_1d.bool())
 
-        self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "test/loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
         return loss
 
     def validation_step(
@@ -217,7 +223,14 @@ class LitMAE(pl.LightningModule):
 
         loss = self.pretext_strategy.compute_loss(pred, target, mask_1d.bool())
 
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "val/loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
         return loss
 
     def configure_optimizers(self):

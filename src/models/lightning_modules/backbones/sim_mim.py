@@ -117,7 +117,14 @@ class LitSimMIM(pl.LightningModule):
 
         loss = self.pretext_strategy.compute_loss(preds, targets, mask_1d)
 
-        self.log("test/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log(
+            "test/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -126,7 +133,7 @@ class LitSimMIM(pl.LightningModule):
         targets = self.patchify(x)
 
         loss = self.pretext_strategy.compute_loss(preds, targets, mask_1d)
-        self.log("val/loss", loss, on_epoch=True, prog_bar=True)
+        self.log("val/loss", loss, on_epoch=True, prog_bar=True, sync_dist=True)
         return loss
 
     def configure_optimizers(self):

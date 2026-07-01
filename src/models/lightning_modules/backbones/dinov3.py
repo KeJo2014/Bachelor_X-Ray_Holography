@@ -116,11 +116,25 @@ class Dinov3Backbone(pl.LightningModule):
             on_step=(prefix == "train"),
             on_epoch=True,
             prog_bar=True,
+            sync_dist=True,
         )
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self._shared_step(batch, batch_idx, "train")
+        x, _, _ = batch
+        preds, mask_1d, _, cropped_x = self(x)
+        targets = self.patchify(cropped_x)
+
+        loss = self.pretext_strategy.compute_loss(preds, targets, mask_1d)
+
+        self.log(
+            f"train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        return loss
 
     def validation_step(self, batch, batch_idx):
         return self._shared_step(batch, batch_idx, "val")

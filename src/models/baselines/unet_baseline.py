@@ -49,11 +49,27 @@ class LitUnetBaseline(pl.LightningModule):
             on_step=(prefix == "train"),
             on_epoch=True,
             prog_bar=True,
+            sync_dist=True,
         )
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self._shared_step(batch, batch_idx, self.train_metrics, "train")
+        x, _, y_mask = batch
+        logits = self(x)
+
+        loss = self.loss_fn(logits, y_mask)
+        probs = torch.sigmoid(logits)
+
+        self.train_metrics.update(probs, y_mask.long())
+
+        self.log(
+            f"train/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+        )
+        return loss
 
     def validation_step(self, batch, batch_idx):
         return self._shared_step(batch, batch_idx, self.val_metrics, "val")
