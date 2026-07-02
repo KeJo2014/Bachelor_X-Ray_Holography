@@ -48,13 +48,12 @@ class LitResnetBaseline(pl.LightningModule):
             prog_bar=True,
             sync_dist=True,
         )
-        
+
         self.log_dict(
-            metrics_collection, 
-            on_step=False, 
-            on_epoch=True, 
+            metrics_collection,
+            on_step=False,
+            on_epoch=True,
             prog_bar=(prefix == "val"),
-            sync_dist=True
         )
         return loss
 
@@ -67,7 +66,7 @@ class LitResnetBaseline(pl.LightningModule):
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         self.log_dict(self.train_metrics, on_step=False, on_epoch=True, prog_bar=False)
-        
+
         return loss
 
     def validation_step(self, batch, batch_idx):

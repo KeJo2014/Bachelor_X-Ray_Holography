@@ -11,6 +11,7 @@ from experiments.abstract_experiment import AbstractExperiment
 from datasets.abstract_dataset import AbstractDataset
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from omegaconf import DictConfig
 from hydra.utils import instantiate
 
@@ -21,14 +22,12 @@ class BaselineExperiment(AbstractExperiment):
     def __init__(
         self,
         dataloader: pl.LightningDataModule,
-        mlflow_run_id: str,
         experiment_config: DictConfig,
         config: DictConfig,
     ):
         super().__init__(
             name=experiment_config.name,
             dataloader=dataloader,
-            mlflow_run_id=mlflow_run_id,
             checkpoint_dir=os.path.join(experiment_config.checkpoint_dir),
             config=config,
         )
@@ -38,8 +37,8 @@ class BaselineExperiment(AbstractExperiment):
     def train_and_evaluate(self):
         mlflow_logger = MLFlowLogger(
             tracking_uri=self.config.mlflow_uri,
+            experiment_name="X-Ray Holography",
             run_name=self.name,
-            run_id=self.mlflow_run_id,
         )
 
         monitor_metric = self.cfg.trainer.monitor_metric
@@ -67,6 +66,7 @@ class BaselineExperiment(AbstractExperiment):
         logger.info("Starting test evaluation...")
         trainer.test(self.model, datamodule=self.dataloader, ckpt_path="best")
 
+    @rank_zero_only
     def create_segmentation_visualizations(self):
         from visualizations.segmentation_visualizations import (
             visualize_segmentation_result,
@@ -107,32 +107,32 @@ class BaselineExperiment(AbstractExperiment):
         self.model = model_type.load_from_checkpoint(latest_checkpoint)
 
 
+@rank_zero_only
+def setup_mlflow_globals(cfg):
+    mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
+    if cfg.get("mlflow_log_system_metrics", False):
+        mlflow.enable_system_metrics_logging()
+
+
 @hydra.main(version_base=None, config_path="../../conf/", config_name="baseline_config")
 def main(cfg: DictConfig):
     logging.basicConfig(level=cfg.loglevel, format="%(levelname)s: %(message)s")
-
-    # setup mlflow
-    mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
-    mlflow.set_experiment("X-Ray Holography")
-    if cfg.get("mlflow_log_system_metrics", False):
-        mlflow.enable_system_metrics_logging()
+    setup_mlflow_globals(cfg)
 
     datamodule: AbstractDataset = instantiate(cfg.datamodule, batch_size=cfg.batch_size)
     datamodule.setup()
     experiment = cfg.models.baselines
-    with mlflow.start_run(run_name=experiment.name) as run:
-        downstream_experiment = BaselineExperiment(
-            dataloader=datamodule,
-            mlflow_run_id=run.info.run_id,
-            experiment_config=experiment,
-            config=cfg,
-        )
-        downstream_experiment.train_and_evaluate()
-        if not cfg.get("hyperparameter_optimization_mode", False):
-            if experiment.visualization_type == "segmentation":
-                downstream_experiment.create_segmentation_visualizations()
-            elif experiment.visualization_type == "multi_label_classification":
-                pass
+    downstream_experiment = BaselineExperiment(
+        dataloader=datamodule,
+        experiment_config=experiment,
+        config=cfg,
+    )
+    downstream_experiment.train_and_evaluate()
+    if not cfg.get("hyperparameter_optimization_mode", False):
+        if experiment.visualization_type == "segmentation":
+            downstream_experiment.create_segmentation_visualizations()
+        elif experiment.visualization_type == "multi_label_classification":
+            pass
 
 
 if __name__ == "__main__":
