@@ -37,6 +37,7 @@ class BaselineExperiment(AbstractExperiment):
         )
         self.cfg = experiment_config
         self.model = instantiate(experiment_config.model)
+        self.run_id = None
 
     def train_and_evaluate(self):
         mlflow_logger = MLFlowLogger(
@@ -67,6 +68,7 @@ class BaselineExperiment(AbstractExperiment):
             callbacks=[checkpoint_callback, mlflow_callback],
             precision="16-mixed",
         )
+        self.run_id = trainer.logger.run_id
 
         logger.info("Starting downstream training...")
         trainer.fit(self.model, datamodule=self.dataloader)
@@ -93,7 +95,11 @@ class BaselineExperiment(AbstractExperiment):
         fig = visualize_segmentation_result(
             batch_x[0, 0], true_mask[0, 0], predicted_mask.cpu()[0, 0]
         )
-        mlflow.log_figure(fig, "visualizations/segmentation_result.png")
+        if self.run_id != None:
+            with mlflow.start_run(run_id=self.run_id):
+                mlflow.log_figure(fig, "visualizations/segmentation_result.png")
+        else:
+            mlflow.log_figure(fig, "visualizations/segmentation_result.png")
         plt.close(fig)
 
     def _load_model_from_checkpoint(self, model_type: pl.LightningModule):

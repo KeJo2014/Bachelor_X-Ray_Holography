@@ -188,7 +188,7 @@ class HologramDataModule(AbstractDataset):
         )
         self.img_size = 224
         self.setup_loaded = False
-        self.initial_crop_size = 500
+        self.initial_crop_size = 960
         self.add_poisson_noise = add_poisson_noise
         self.mode = mode
         self.limit_samples = limit_samples
