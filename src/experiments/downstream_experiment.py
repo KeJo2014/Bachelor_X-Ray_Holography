@@ -8,10 +8,15 @@ import torch
 import matplotlib.pyplot as plt
 import glob
 
-from experiments.abstract_experiment import AbstractExperiment
+from experiments.abstract_experiment import (
+    AbstractExperiment,
+    MLflowLoggingCallback,
+    setup_mlflow_globals,
+)
 from datasets.abstract_dataset import AbstractDataset
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from omegaconf import DictConfig
 from hydra.utils import instantiate, get_class
 
@@ -22,19 +27,18 @@ class DownstreamExperiment(AbstractExperiment):
     def __init__(
         self,
         dataloader: pl.LightningDataModule,
-        mlflow_run_id: str,
         experiment_config: DictConfig,
         config: DictConfig,
     ):
         super().__init__(
             name=experiment_config.name,
             dataloader=dataloader,
-            mlflow_run_id=mlflow_run_id,
             checkpoint_dir=os.path.join(experiment_config.checkpoint_dir),
             config=config,
         )
         self.cfg = experiment_config
         self.model = self._build_model()
+        self.run_id = None
 
     def _get_class_from_string(self, class_path: str):
         """Helper function to load python class according to path"""
@@ -73,8 +77,8 @@ class DownstreamExperiment(AbstractExperiment):
     def train_and_evaluate(self):
         mlflow_logger = MLFlowLogger(
             tracking_uri=self.config.mlflow_uri,
+            experiment_name="X-Ray Holography",
             run_name=self.name,
-            run_id=self.mlflow_run_id,
         )
 
         monitor_metric = self.cfg.trainer.monitor_metric
@@ -87,14 +91,19 @@ class DownstreamExperiment(AbstractExperiment):
             auto_insert_metric_name=False,
         )
 
+        mlflow_callback = MLflowLoggingCallback(
+            config=self.config, experiment_name="X-Ray Holography"
+        )
+
         trainer = pl.Trainer(
             max_epochs=self.cfg.trainer.max_epochs,
             accelerator="auto",
             devices="auto",
             logger=mlflow_logger,
-            callbacks=[checkpoint_callback],
+            callbacks=[checkpoint_callback, mlflow_callback],
             precision="16-mixed",
         )
+        self.run_id = trainer.logger.run_id
 
         logger.info("Starting downstream training...")
         trainer.fit(self.model, datamodule=self.dataloader)
@@ -102,6 +111,7 @@ class DownstreamExperiment(AbstractExperiment):
         logger.info("Starting test evaluation...")
         trainer.test(self.model, datamodule=self.dataloader, ckpt_path="best")
 
+    @rank_zero_only
     def create_segmentation_visualizations(self):
         from visualizations.segmentation_visualizations import (
             visualize_segmentation_result,
@@ -120,7 +130,11 @@ class DownstreamExperiment(AbstractExperiment):
         fig = visualize_segmentation_result(
             batch_x[0, 0], true_mask[0, 0], predicted_mask.cpu()[0, 0]
         )
-        mlflow.log_figure(fig, "visualizations/segmentation_result.png")
+        if self.run_id != None:
+            with mlflow.start_run(run_id=self.run_id):
+                mlflow.log_figure(fig, "visualizations/segmentation_result.png")
+        else:
+            mlflow.log_figure(fig, "visualizations/segmentation_result.png")
         plt.close(fig)
 
     def _load_model_from_checkpoint(self, model_type: pl.LightningModule):
@@ -149,31 +163,23 @@ class DownstreamExperiment(AbstractExperiment):
 )
 def main(cfg: DictConfig):
     logging.basicConfig(level=cfg.loglevel, format="%(levelname)s: %(message)s")
-
-    # setup mlflow
-    mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
-    mlflow.set_experiment("X-Ray Holography")
-    if cfg.get("mlflow_log_system_metrics", False):
-        mlflow.enable_system_metrics_logging()
+    setup_mlflow_globals(cfg)
 
     datamodule: AbstractDataset = instantiate(cfg.datamodule, batch_size=cfg.batch_size)
     datamodule.setup()
     experiment = cfg.models.downstream
-    with mlflow.start_run(run_name=experiment.name) as run:
-        mlflow.log_param("freeze_encoder", experiment.task.freeze_encoder)
 
-        downstream_experiment = DownstreamExperiment(
-            dataloader=datamodule,
-            mlflow_run_id=run.info.run_id,
-            experiment_config=experiment,
-            config=cfg,
-        )
-        downstream_experiment.train_and_evaluate()
-        if not cfg.get("hyperparameter_optimization_mode", False):
-            if experiment.visualization_type == "segmentation":
-                downstream_experiment.create_segmentation_visualizations()
-            elif experiment.visualization_type == "multi_label_classification":
-                pass
+    downstream_experiment = DownstreamExperiment(
+        dataloader=datamodule,
+        experiment_config=experiment,
+        config=cfg,
+    )
+    downstream_experiment.train_and_evaluate()
+    if not cfg.get("hyperparameter_optimization_mode", False):
+        if experiment.visualization_type == "segmentation":
+            downstream_experiment.create_segmentation_visualizations()
+        elif experiment.visualization_type == "multi_label_classification":
+            pass
 
 
 if __name__ == "__main__":

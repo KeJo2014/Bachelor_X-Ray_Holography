@@ -82,7 +82,7 @@ class LitSegmentationTask(pl.LightningModule):
 
         return dice_loss
 
-    def _shared_step(self, batch, batch_idx, metrics_collection, prefix: str):
+    def _shared_eval_step(self, batch, batch_idx, metrics_collection, prefix: str):
         x, _, y_mask = batch
         logits = self(x)
 
@@ -93,9 +93,15 @@ class LitSegmentationTask(pl.LightningModule):
         self.log(
             f"{prefix}/loss",
             loss,
-            on_step=(prefix == "train"),
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
+        )
+        self.log_dict(
+            metrics_collection,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=(prefix == "val"),
         )
         return loss
 
@@ -114,25 +120,14 @@ class LitSegmentationTask(pl.LightningModule):
             on_epoch=True,
             prog_bar=True,
         )
+        self.log_dict(self.train_metrics, on_step=False, on_epoch=True, prog_bar=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        return self._shared_step(batch, batch_idx, self.val_metrics, "val")
+        return self._shared_eval_step(batch, batch_idx, self.val_metrics, "val")
 
     def test_step(self, batch, batch_idx):
-        return self._shared_step(batch, batch_idx, self.test_metrics, "test")
-
-    def on_train_epoch_end(self):
-        self.log_dict(self.train_metrics.compute(), on_epoch=True, prog_bar=False)
-        self.train_metrics.reset()
-
-    def on_validation_epoch_end(self):
-        self.log_dict(self.val_metrics.compute(), on_epoch=True, prog_bar=True)
-        self.val_metrics.reset()
-
-    def on_test_epoch_end(self):
-        self.log_dict(self.test_metrics.compute(), on_epoch=True)
-        self.test_metrics.reset()
+        return self._shared_eval_step(batch, batch_idx, self.test_metrics, "test")
 
     def configure_optimizers(self):
         # if frozen only optimze the head

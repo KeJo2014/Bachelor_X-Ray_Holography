@@ -5,10 +5,15 @@ import mlflow
 import matplotlib.pyplot as plt
 import hydra
 
-from experiments.abstract_experiment import AbstractExperiment
+from experiments.abstract_experiment import (
+    AbstractExperiment,
+    MLflowLoggingCallback,
+    setup_mlflow_globals,
+)
 from datasets.abstract_dataset import AbstractDataset
 from visualizations.mae_visualizations import visualize_mae_results
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from pytorch_lightning.loggers import MLFlowLogger
 from omegaconf import DictConfig
 from hydra.utils import instantiate, get_class
@@ -21,9 +26,8 @@ class MAEVisualizationCallback(Callback):
         super().__init__()
         self.log_every_n_epochs = log_every_n_epochs
 
+    @rank_zero_only
     def _log_visualization(self, trainer, pl_module, batch, filename):
-        if not trainer.is_global_zero:
-            return
         batch_x, _, _ = batch
         fig = visualize_mae_results(pl_module, batch_x)
 
@@ -57,7 +61,6 @@ class RandomSimMIMExperiment(AbstractExperiment):
         self,
         checkpoint_dir: os.PathLike,
         dataloader: pl.LightningDataModule,
-        mlflow_run_id: str,
         config: DictConfig,
         model_settings: DictConfig,
     ):
@@ -67,12 +70,12 @@ class RandomSimMIMExperiment(AbstractExperiment):
         super().__init__(
             name=model_settings.name,
             dataloader=dataloader,
-            mlflow_run_id=mlflow_run_id,
             checkpoint_dir=checkpoint_dir,
             config=config,
         )
         self.model_settings = model_settings
         self.model = None
+        self.mlflow_logger = None
 
     def train_model(self, model: pl.LightningModule):
         checkpoint_callback = ModelCheckpoint(
@@ -88,21 +91,23 @@ class RandomSimMIMExperiment(AbstractExperiment):
                 "log_every_n_epochs", -1
             )
         )
-
-        mlflow_logger = MLFlowLogger(
+        self.mlflow_logger = MLFlowLogger(
             tracking_uri=self.config.mlflow_uri,
-            run_name="Training",
-            run_id=self.mlflow_run_id,
+            experiment_name="X-Ray Holography",
+            run_name=self.name,
+        )
+        mlflow_callback = MLflowLoggingCallback(
+            config=self.config, experiment_name="X-Ray Holography"
         )
 
         trainer = pl.Trainer(
             max_epochs=self.model_settings.parameters.num_epochs,
             accelerator="auto",
             devices="auto",
-            logger=mlflow_logger,
-            callbacks=[checkpoint_callback, vis_callback],
+            logger=self.mlflow_logger,
+            callbacks=[checkpoint_callback, vis_callback, mlflow_callback],
             precision="16-mixed",  # use half-precision
-            accumulate_grad_batches=8,
+            accumulate_grad_batches=2,
         )
         trainer.fit(model, datamodule=self.dataloader)
         self.model = model
@@ -113,16 +118,17 @@ class RandomSimMIMExperiment(AbstractExperiment):
 
         vis_callback = MAEVisualizationCallback()
 
-        mlflow_logger = MLFlowLogger(
-            tracking_uri=self.config.mlflow_uri,
-            run_name="Evaluation",
-            run_id=self.mlflow_run_id,
-        )
+        if self.mlflow_logger == None:
+            self.mlflow_logger = MLFlowLogger(
+                tracking_uri=self.config.mlflow_uri,
+                experiment_name="X-Ray Holography",
+                run_name=self.name,
+            )
 
         trainer = pl.Trainer(
             accelerator="auto",
             devices="auto",
-            logger=mlflow_logger,
+            logger=self.mlflow_logger,
             callbacks=[vis_callback],
             accumulate_grad_batches=2,
         )
@@ -133,13 +139,8 @@ class RandomSimMIMExperiment(AbstractExperiment):
 def main(cfg: DictConfig):
     # setup logging
     logging.basicConfig(level=cfg.loglevel, format="%(levelname)s: %(message)s")
+    setup_mlflow_globals(cfg)
     logging.info("Initializing Processes for Random MAE Experiment...")
-
-    # setup mlflow
-    mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
-    mlflow.set_experiment("X-Ray Holography")
-    if cfg.get("mlflow_log_system_metrics", False):
-        mlflow.enable_system_metrics_logging()
 
     datamodule: AbstractDataset = instantiate(
         cfg.datamodule, batch_size=cfg.experiments.batch_size
@@ -147,18 +148,10 @@ def main(cfg: DictConfig):
     datamodule.setup()
     best_val_loss = float("inf")
     variation = cfg.models.backbones
-    local_rank = os.environ.get("SLURM_PROCID", "0")
-    run_id = None
-
-    if local_rank == "0":
-        parent_run = mlflow.start_run(run_name=variation.name)
-        run_id = parent_run.info.run_id
-        mlflow.log_params(variation.parameters)
 
     experiment = RandomSimMIMExperiment(
         checkpoint_dir=os.path.join(variation.checkpoint_dir),
         dataloader=datamodule,
-        mlflow_run_id=run_id,
         config=cfg,
         model_settings=variation,
     )

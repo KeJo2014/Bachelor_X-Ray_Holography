@@ -9,11 +9,20 @@ from abc import ABC, abstractmethod
 from omegaconf import DictConfig, OmegaConf
 from models.lightning_modules.pretext_tasks import PRETEXT_STRATEGIES
 from models.loss_functions import LOSS_FUNCTIONS
+from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
 logger = logging.getLogger(__name__)
 
 torch.serialization.add_safe_globals(PRETEXT_STRATEGIES)
 torch.serialization.add_safe_globals(LOSS_FUNCTIONS)
+
+
+@rank_zero_only
+def setup_mlflow_globals(cfg):
+    mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
+    if cfg.get("mlflow_log_system_metrics", False):
+        mlflow.enable_system_metrics_logging()
 
 
 class AbstractExperiment(ABC):
@@ -25,7 +34,6 @@ class AbstractExperiment(ABC):
         self,
         name: str,
         dataloader: pl.LightningDataModule,
-        mlflow_run_id: str,
         checkpoint_dir: os.PathLike,
         config: DictConfig,
     ) -> None:
@@ -38,11 +46,8 @@ class AbstractExperiment(ABC):
         super().__init__()
         self.dataloader: pl.LightningDataModule = dataloader
         self.name = name
-        self.mlflow_run_id = mlflow_run_id
         self.config = config
         self.checkpoint_dir = checkpoint_dir
-
-        mlflow.log_text(OmegaConf.to_yaml(config, resolve=True), "config.yaml")
 
         # create reproducibility
         pl.seed_everything(42)
@@ -95,3 +100,29 @@ class AbstractExperiment(ABC):
     #     :return: None
     #     """
     #     pass
+
+
+class MLflowLoggingCallback(Callback):
+    """Pytorch Callback to ensure that system metrics are tracked and config data logged."""
+
+    def __init__(self, config, experiment_name: str):
+        super().__init__()
+        self.config = config
+        self.experiment_name = experiment_name
+
+    def on_train_start(self, trainer, pl_module):
+        if trainer.is_global_zero:
+            mlflow.set_tracking_uri(self.config.mlflow_uri)
+            mlflow.set_experiment(self.experiment_name)
+
+            # attach to current mlflow run
+            mlflow.start_run(run_id=trainer.logger.run_id)
+            mlflow.log_text(OmegaConf.to_yaml(self.config, resolve=True), "config.yaml")
+            logger.info(
+                f"mlflow fluent context run for run id {trainer.logger.run_id} now active."
+            )
+
+    def on_train_end(self, trainer, pl_module):
+        if trainer.is_global_zero:
+            mlflow.end_run()
+            logger.info("mlflow fluent context sucessfull shutdown.")

@@ -8,7 +8,7 @@ class ViTSegmentationHead(nn.Module):
         self,
         embed_dim: int = 768,
         num_classes: int = 1,
-        img_size: int = 960,
+        img_size: int = 224,
         patch_size: int = 16,
     ):
         super().__init__()

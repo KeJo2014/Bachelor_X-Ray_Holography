@@ -7,7 +7,11 @@ import torch
 import matplotlib.pyplot as plt
 import glob
 
-from experiments.abstract_experiment import AbstractExperiment
+from experiments.abstract_experiment import (
+    AbstractExperiment,
+    MLflowLoggingCallback,
+    setup_mlflow_globals,
+)
 from datasets.abstract_dataset import AbstractDataset
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import MLFlowLogger
@@ -51,12 +55,16 @@ class BaselineExperiment(AbstractExperiment):
             auto_insert_metric_name=False,
         )
 
+        mlflow_callback = MLflowLoggingCallback(
+            config=self.config, experiment_name="X-Ray Holography"
+        )
+
         trainer = pl.Trainer(
             max_epochs=self.cfg.trainer.max_epochs,
             accelerator="auto",
             devices="auto",
             logger=mlflow_logger,
-            callbacks=[checkpoint_callback],
+            callbacks=[checkpoint_callback, mlflow_callback],
             precision="16-mixed",
         )
 
@@ -105,13 +113,6 @@ class BaselineExperiment(AbstractExperiment):
         logger.info(f"Loading newst model checkpoint: {latest_checkpoint}")
 
         self.model = model_type.load_from_checkpoint(latest_checkpoint)
-
-
-@rank_zero_only
-def setup_mlflow_globals(cfg):
-    mlflow.set_tracking_uri(uri=cfg.mlflow_uri)
-    if cfg.get("mlflow_log_system_metrics", False):
-        mlflow.enable_system_metrics_logging()
 
 
 @hydra.main(version_base=None, config_path="../../conf/", config_name="baseline_config")

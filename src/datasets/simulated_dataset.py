@@ -174,7 +174,10 @@ class HologramDataModule(AbstractDataset):
         self,
         data_dir: str,
         batch_size: int = 32,
-        num_workers: int = min(8, max(1, (os.cpu_count() or 1) - 3)),
+        num_workers: int = min(
+            13,
+            max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1)) - 1),
+        ),
         center_holograms: bool = True,
         mode: str = None,
         add_poisson_noise: bool = False,

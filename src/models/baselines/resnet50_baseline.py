@@ -19,7 +19,7 @@ class LitResnetBaseline(pl.LightningModule):
         self.C = channels
 
         self.model = timm.create_model(
-            "resnet18",
+            "resnet50",
             pretrained=self.hparams.pretrained,
             num_classes=self.hparams.num_classes,
             in_chans=channels,
