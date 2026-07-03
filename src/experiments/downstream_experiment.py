@@ -134,7 +134,9 @@ class DownstreamExperiment(AbstractExperiment):
             with mlflow.start_run(run_id=self.run_id):
                 mlflow.log_figure(fig, "visualizations/segmentation_result.png")
         else:
-            mlflow.log_figure(fig, "visualizations/segmentation_result.png")
+            mlflow.set_experiment("Segmentation_Visualizations")
+            with mlflow.start_run():
+                mlflow.log_figure(fig, "visualizations/segmentation_result.png")
         plt.close(fig)
 
     def _load_model_from_checkpoint(self, model_type: pl.LightningModule):

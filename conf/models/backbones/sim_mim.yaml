@@ -1,5 +1,5 @@
 name: "LitSimMIM Experiment"
-checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae"
+checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/random_mae/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 parameters:
   model:
     _target_: models.lightning_modules.backbones.sim_mim.LitSimMIM

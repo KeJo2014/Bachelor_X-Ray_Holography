@@ -99,7 +99,8 @@ class BaselineExperiment(AbstractExperiment):
             with mlflow.start_run(run_id=self.run_id):
                 mlflow.log_figure(fig, "visualizations/segmentation_result.png")
         else:
-            mlflow.log_figure(fig, "visualizations/segmentation_result.png")
+            with mlflow.start_run():
+                mlflow.log_figure(fig, "visualizations/segmentation_result.png")
         plt.close(fig)
 
     def _load_model_from_checkpoint(self, model_type: pl.LightningModule):
@@ -111,7 +112,7 @@ class BaselineExperiment(AbstractExperiment):
 
         if not checkpoint_files:
             logger.critical(
-                "No checkpoint file could be found for Random MAE model. Exiting."
+                "No checkpoint file could be found for baseline model. Exiting."
             )
             raise FileNotFoundError(f"No model checkpoint found.")
 

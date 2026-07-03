@@ -1,15 +1,15 @@
 name: "Unet Segmentation Baseline"
-checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\baselines\\unet"
+checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/baselines/unet/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 visualization_type: "segmentation"
 
 model:
   _target_: models.baselines.unet_baseline.LitUnetBaseline
-  lr: 0.001
+  lr: 0.0001
   weight_decay: 0.01
-  encoder_name: "tu-convnext_base.dinov3_lvd1689m"  # tu-convnext_base.dinov3_lvd1689m
-  channels: 3
+  encoder_name: "resnet34" #tu-convnext_base.dinov3_lvd1689m
+  channels: 1
 
 trainer:
-  max_epochs: 1
-  monitor_metric: "val/loss"
-  monitor_mode: "min"
+  max_epochs: 40
+  monitor_metric: "val/F2_Score"
+  monitor_mode: "max"

@@ -19,7 +19,7 @@ class LitResnetBaseline(pl.LightningModule):
         self.C = channels
 
         self.model = timm.create_model(
-            "resnet50",
+            "resnet18",
             pretrained=self.hparams.pretrained,
             num_classes=self.hparams.num_classes,
             in_chans=channels,
@@ -38,7 +38,7 @@ class LitResnetBaseline(pl.LightningModule):
         logits = self(x)
 
         loss = F.binary_cross_entropy_with_logits(logits, y.float())
-        metrics_collection.update(logits, y.long())
+        metrics_collection.update(torch.sigmoid(logits), y.long())
 
         self.log(
             f"{prefix}/loss",

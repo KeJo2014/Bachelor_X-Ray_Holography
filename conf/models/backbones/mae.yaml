@@ -1,5 +1,5 @@
 name: "MAE Experiment"
-checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\mae"
+checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/${oc.env:SLURM_JOB_ID,${now:%Y-%m-%d_%H-%M-%S}}"
 parameters:
   model:
     _target_: models.lightning_modules.backbones.mae.LitMAE
@@ -17,6 +17,6 @@ parameters:
     lr: 1.5e-4
     warmup_ratio: 0.1
     weight_decay: 0.05
-    channels: 1
-  num_epochs: 5
+    channels: 3
+  num_epochs: 2
   log_every_n_epochs: 5

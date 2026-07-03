@@ -1,10 +1,10 @@
 name: "Segmentation"
-checkpoint_dir: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\random_mae\\segmentation"
+checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/random_mae/segmentation/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 visualization_type: "segmentation"
 
 backbone:
-  module_class: "models.lightning_modules.backbones.dinov3.Dinov3Backbone"
-  checkpoint_path: "C:\\Users\\kelle\\Documents\\storage\\xray\\checkpoints\\dinov3\\mae-epoch=04-train_loss=0.0000.ckpt"
+  module_class: "models.lightning_modules.backbones.mae.LitMAE"
+  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/<INSERT FOLDER/>/mae-epoch=01-train_loss=0.0000.ckpt"
 
 task:
   _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
@@ -17,8 +17,8 @@ task:
     _target_: models.heads.segmentation_head.ViTSegmentationHead
     embed_dim: 768
     num_classes: 1
-    patch_size: 224
     patch_size: 8
+    img_size: 224
 
 trainer:
   max_epochs: 1
