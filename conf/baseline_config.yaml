@@ -1,5 +1,5 @@
 defaults:
-  - models/baselines: resnet_18
+  - models/baselines: unet
   - override hydra/sweeper: optuna
   - override hydra/launcher: submitit_slurm
   - _self_

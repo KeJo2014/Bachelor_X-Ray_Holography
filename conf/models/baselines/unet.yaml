@@ -1,6 +1,7 @@
 name: "Unet Segmentation Baseline"
 checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/baselines/unet/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 visualization_type: "segmentation"
+log_every_n_epochs: 1
 
 model:
   _target_: models.baselines.unet_baseline.LitUnetBaseline
@@ -10,6 +11,6 @@ model:
   channels: 1
 
 trainer:
-  max_epochs: 40
+  max_epochs: 2
   monitor_metric: "val/F2_Score"
   monitor_mode: "max"
