@@ -4,7 +4,7 @@ visualization_type: "segmentation"
 
 backbone:
   module_class: "models.lightning_modules.backbones.mae.LitMAE"
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/<INSERT FOLDER/>/mae-epoch=01-train_loss=0.0000.ckpt"
+  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/<INSERT FOLDER/>/backbone-epoch=01-train_loss=0.0000.ckpt"
 
 task:
   _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask

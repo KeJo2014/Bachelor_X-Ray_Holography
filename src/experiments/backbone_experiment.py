@@ -80,10 +80,11 @@ class RandomSimMIMExperiment(AbstractExperiment):
     def train_model(self, model: pl.LightningModule):
         checkpoint_callback = ModelCheckpoint(
             dirpath=self.checkpoint_dir,
-            filename="mae-{epoch:02d}-{train_loss:.4f}",
-            monitor="train/loss_epoch",
+            filename=f"backbone-{{epoch:02d}}-val_loss={{val/loss:.4f}}",
+            monitor="val/loss",
             mode="min",
             save_top_k=3,
+            auto_insert_metric_name=False,
         )
 
         vis_callback = MAEVisualizationCallback(
