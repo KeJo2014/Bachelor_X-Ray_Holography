@@ -1,8 +1,7 @@
-import os
 import logging
-import mlflow
 import hydra
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 
@@ -20,6 +19,7 @@ from experiments.abstract_experiment import (
 from datasets.abstract_dataset import AbstractDataset
 from visualizations.segmentation_visualizations import visualize_segmentation_result
 
+matplotlib.use('Agg')
 logger = logging.getLogger(__name__)
 
 

@@ -41,7 +41,7 @@ class LitUnetBaseline(pl.LightningModule):
         loss = self.loss_fn(logits, y_mask)
         probs = torch.sigmoid(logits)
 
-        metrics_collection.update(probs, y_mask.long())
+        metrics_collection.update(probs, (y_mask > 0.5).long())
 
         self.log(
             f"{prefix}/loss",

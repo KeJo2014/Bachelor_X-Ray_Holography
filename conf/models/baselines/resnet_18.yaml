@@ -13,5 +13,5 @@ model:
 
 trainer:
   max_epochs: 2
-  monitor_metric: "val/f1_micro"
+  monitor_metric: "val/f1_macro"
   monitor_mode: "max"
