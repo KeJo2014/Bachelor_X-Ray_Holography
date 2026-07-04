@@ -18,8 +18,9 @@ from experiments.abstract_experiment import (
 )
 from datasets.abstract_dataset import AbstractDataset
 from visualizations.segmentation_visualizations import visualize_segmentation_result
+from visualizations.backbone_visualizations import plot_multilabel_confusion_matrix
 
-matplotlib.use('Agg')
+matplotlib.use("Agg")
 logger = logging.getLogger(__name__)
 
 
@@ -35,9 +36,6 @@ class VisualizationCallback(Callback):
     def _log_visualization(
         self, trainer: pl.Trainer, pl_module: pl.LightningModule, batch, filename: str
     ):
-        if self.cfg.visualization_type == "multi_label_classification":
-            return
-
         if self.cfg.visualization_type == "segmentation":
             batch_x, _, true_mask = batch
             pl_module.eval()
@@ -75,6 +73,32 @@ class VisualizationCallback(Callback):
         ):
             filename = f"visualizations/val_reconstruction_epoch_{trainer.current_epoch:03d}.png"
             self._log_visualization(trainer, pl_module, batch, filename)
+
+    @rank_zero_only
+    def on_test_epoch_end(self, trainer, pl_module):
+        if self.cfg.visualization_type == "multi_label_classification":
+            matrices = pl_module.test_conf_mat.compute()
+
+            # create class_name list
+            label_map = trainer.datamodule.train_dataset.label_map
+            inv_map = {v: k for k, v in label_map.items()}
+            class_names = [inv_map[i] for i in range(pl_module.hparams.num_classes)]
+
+            fig = plot_multilabel_confusion_matrix(
+                matrices=matrices,
+                num_classes=pl_module.hparams.num_classes,
+                class_names=class_names,
+            )
+
+            for logger in trainer.loggers:
+                if isinstance(logger, MLFlowLogger):
+                    logger.experiment.log_figure(
+                        logger.run_id,
+                        fig,
+                        "visualizations/multilabel_confusion_matrix.png",
+                    )
+            plt.close(fig)
+            pl_module.test_conf_mat.reset()
 
 
 class BaselineExperiment(AbstractExperiment):

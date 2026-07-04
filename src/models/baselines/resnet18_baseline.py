@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import timm
 from metrics.multi_label_classification_metrics import get_metric_collection
+from torchmetrics.classification import MultilabelConfusionMatrix
 
 
 class LitResnetBaseline(pl.LightningModule):
@@ -17,6 +18,9 @@ class LitResnetBaseline(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.C = channels
+        self.test_conf_mat = MultilabelConfusionMatrix(
+            num_labels=self.hparams.num_classes
+        )
 
         self.model = timm.create_model(
             "resnet18",
@@ -73,6 +77,9 @@ class LitResnetBaseline(pl.LightningModule):
         return self._shared_eval_step(batch, self.val_metrics, "val")
 
     def test_step(self, batch, batch_idx):
+        x, y, _ = batch
+        logits = self(x)
+        self.test_conf_mat.update(logits, y.long())
         return self._shared_eval_step(batch, self.test_metrics, "test")
 
     def configure_optimizers(self):
