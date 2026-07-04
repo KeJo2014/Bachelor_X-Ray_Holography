@@ -298,38 +298,6 @@ class HologramDataModule(AbstractDataset):
 
         self.setup_loaded = True
 
-    def train_dataloader(self):  # TODO: überführe diese Klassen in abstract class
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            drop_last=True,
-            persistent_workers=True,
-            prefetch_factor=2,
-            pin_memory=True,
-        )
-
-    def test_dataloader(self):
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            drop_last=True,
-            persistent_workers=True,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            drop_last=True,
-            persistent_workers=True,
-        )
-
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt

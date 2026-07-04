@@ -3,8 +3,9 @@ import torch
 import numpy as np
 import logging
 import torchvision.transforms as T
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset
 from datasets.abstract_dataset import AbstractDataset
+from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +44,14 @@ class HologramDataset(Dataset):
 
         if self.transform:
             tensor = self.transform(tensor)
+
         # DUMMY LABEL DATA
         num_classes = 3
         multi_hot_label = torch.zeros(num_classes, dtype=torch.float32)
         active_classes = [0, 2]
         for c in active_classes:
             multi_hot_label[c] = 1.0
+
         _, h, w = tensor.shape
         Y, X = np.ogrid[:h, :w]
         center_y, center_x = h / 2.0, w / 2.0
@@ -59,7 +62,7 @@ class HologramDataset(Dataset):
             tensor,
             multi_hot_label,
             mask_tensor,
-        )  # TODO: return real label instead of dummy tensor
+        )
 
 
 class HologramDataModule(AbstractDataset):
@@ -68,12 +71,14 @@ class HologramDataModule(AbstractDataset):
         data_dir: str,
         batch_size: int = 32,
         num_workers: int = min(8, max(1, (os.cpu_count() or 1) - 1)),
+        limit_samples: int = None,
     ):
         super().__init__(
             data_dir=data_dir, batch_size=batch_size, num_workers=num_workers
         )
         self.img_size = 960
         self.setup_loaded = False
+        self.limit_samples = limit_samples
 
         self.transform = T.Compose(
             [T.CenterCrop((self.img_size, self.img_size))]
@@ -82,55 +87,49 @@ class HologramDataModule(AbstractDataset):
     def setup(self, stage=None):
         if self.setup_loaded:
             return
+
         all_files = [
             os.path.join(self.data_dir, f"Raw_Hologram_{i:05d}.bin")
             for i in range(0, 601)
         ]
         valid_files = [f for f in all_files if os.path.exists(f)]
-        logger.info(f"{len(valid_files)} hologramms found")
+        logger.info(f"{len(valid_files)} holograms found")
 
-        full_dataset = HologramDataset(valid_files, transform=self.transform)
+        if not valid_files:
+            raise ValueError(f"No valid files found in directory: {self.data_dir}")
 
-        # three-way split (80% Train, 10% Val, 10% Test)
-        total_size = len(full_dataset)
-        train_size = int(0.8 * total_size)
-        val_size = int(0.1 * total_size)
-        test_size = total_size - train_size - val_size
-
-        generator = torch.Generator().manual_seed(42)
-        self.train_dataset, self.val_dataset, self.test_dataset = (
-            random_split(  # TODO: not uncorrelated. Needs group shuffle
-                full_dataset, [train_size, val_size, test_size], generator=generator
+        if self.limit_samples is not None and self.limit_samples < len(valid_files):
+            logger.info(
+                f"Reducing dataset of {len(valid_files)} to {self.limit_samples} instances."
             )
+            valid_files, _ = train_test_split(
+                valid_files,
+                train_size=self.limit_samples,
+                random_state=42,
+            )
+
+        train_files, temp_files = train_test_split(
+            valid_files,
+            test_size=0.2,
+            random_state=42,
         )
+        val_files, test_files = train_test_split(
+            temp_files,
+            test_size=0.5,
+            random_state=42,
+        )
+
+        self.train_dataset = HologramDataset(
+            file_paths=train_files,
+            transform=self.transform,
+        )
+        self.val_dataset = HologramDataset(
+            file_paths=val_files,
+            transform=self.transform,
+        )
+        self.test_dataset = HologramDataset(
+            file_paths=test_files,
+            transform=self.transform,
+        )
+
         self.setup_loaded = True
-
-    def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            drop_last=True,
-            persistent_workers=True,
-        )
-
-    def test_dataloader(self):
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            drop_last=True,
-            persistent_workers=True,
-        )
-
-    def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            drop_last=True,
-            persistent_workers=True,
-        )

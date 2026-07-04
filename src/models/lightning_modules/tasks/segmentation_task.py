@@ -64,24 +64,6 @@ class LitSegmentationTask(pl.LightningModule):
         logits = self.head(patch_tokens)
         return logits
 
-    def dice_loss(
-        self, logits: torch.Tensor, targets: torch.Tensor
-    ) -> torch.Tensor:  # TODO: check if still needed
-        """
-        Calculates Dice loss
-        """
-
-        # calculate dice loss
-        probs = torch.sigmoid(logits)
-        smooth = 1e-6
-        intersection = (probs * targets).sum()
-        dice_score = (2.0 * intersection + smooth) / (
-            probs.sum() + targets.sum() + smooth
-        )
-        dice_loss = 1.0 - dice_score
-
-        return dice_loss
-
     def _shared_eval_step(self, batch, batch_idx, metrics_collection, prefix: str):
         x, _, y_mask = batch
         logits = self(x)
