@@ -11,7 +11,7 @@ from experiments.abstract_experiment import (
     setup_mlflow_globals,
 )
 from datasets.abstract_dataset import AbstractDataset
-from visualizations.mae_visualizations import visualize_mae_results
+from visualizations.backbone_visualizations import visualize_backbone_results
 from pytorch_lightning.callbacks import ModelCheckpoint, Callback
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from pytorch_lightning.loggers import MLFlowLogger
@@ -29,7 +29,7 @@ class MAEVisualizationCallback(Callback):
     @rank_zero_only
     def _log_visualization(self, trainer, pl_module, batch, filename):
         batch_x, _, _ = batch
-        fig = visualize_mae_results(pl_module, batch_x)
+        fig = visualize_backbone_results(pl_module, batch_x)
 
         for logger in trainer.loggers:
             if isinstance(logger, MLFlowLogger):

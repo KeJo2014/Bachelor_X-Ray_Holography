@@ -22,5 +22,5 @@ task:
 
 trainer:
   max_epochs: 1
-  monitor_metric: "val/loss"
-  monitor_mode: "min"
+  monitor_metric: "val/F2_Score"
+  monitor_mode: "max"
