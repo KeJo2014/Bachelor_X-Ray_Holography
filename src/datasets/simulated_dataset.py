@@ -36,7 +36,7 @@ class CDICropAndBinTransform:
             center_y, center_x = scipy.ndimage.center_of_mass(bright_core)
             cy = int(round(center_y))
             cx = int(round(center_x))
-            
+
             _, h, w = image.shape
             shift_y = (h // 2) - cy
             shift_x = (w // 2) - cx
