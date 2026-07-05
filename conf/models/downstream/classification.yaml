@@ -21,6 +21,6 @@ task:
     num_classes: 2
 
 trainer:
-  max_epochs: 1
-  monitor_metric: "val/f1_micro"
+  max_epochs: 3
+  monitor_metric: "val/f1_macro"
   monitor_mode: "max"

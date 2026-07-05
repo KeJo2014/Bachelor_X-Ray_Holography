@@ -1,5 +1,5 @@
 defaults:
-  - models/downstream: segmentation_vit
+  - models/downstream: classification
   - override hydra/sweeper: optuna
   - override hydra/launcher: submitit_slurm
   - _self_
@@ -35,7 +35,6 @@ loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
 batch_size: 2
-hyperparameter_optimization_mode: false
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule

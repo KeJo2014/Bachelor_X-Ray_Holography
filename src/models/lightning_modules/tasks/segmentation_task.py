@@ -78,6 +78,7 @@ class LitSegmentationTask(pl.LightningModule):
             on_step=False,
             on_epoch=True,
             prog_bar=True,
+            sync_dist=True,
         )
         self.log_dict(
             metrics_collection,

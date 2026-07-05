@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 from metrics.multi_label_classification_metrics import get_metric_collection
+from torchmetrics.classification import MultilabelConfusionMatrix
 
 
 class LitClassificationTask(pl.LightningModule):
@@ -30,6 +31,9 @@ class LitClassificationTask(pl.LightningModule):
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
+        self.test_conf_mat = MultilabelConfusionMatrix(
+            num_labels=self.hparams.num_classes
+        )
 
     def train(self, mode: bool = True):
         """
@@ -94,6 +98,9 @@ class LitClassificationTask(pl.LightningModule):
         return self._shared_eval_step(batch, batch_idx, self.val_metrics, "val")
 
     def test_step(self, batch, batch_idx):
+        x, y, _ = batch
+        logits = self(x)
+        self.test_conf_mat.update(logits, y.long())
         return self._shared_eval_step(batch, batch_idx, self.test_metrics, "test")
 
     def configure_optimizers(self):
