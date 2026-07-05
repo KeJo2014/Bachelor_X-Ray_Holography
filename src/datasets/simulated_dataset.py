@@ -32,21 +32,22 @@ class CDICropAndBinTransform:
             threshold = np.percentile(image_np, 99.0)
             bright_core = image_np > threshold
 
-            # calculate hologram center coordinates and calc crop coordinates
+            # calculate hologram center coordinates
             center_y, center_x = scipy.ndimage.center_of_mass(bright_core)
             cy = int(round(center_y))
             cx = int(round(center_x))
-            crop_h, crop_w = self.crop_size, self.crop_size
-            top = cy - (crop_h // 2)
-            left = cx - (crop_w // 2)
+            
+            _, h, w = image.shape
+            shift_y = (h // 2) - cy
+            shift_x = (w // 2) - cx
 
-            image = TF.crop(image, top, left, crop_h, crop_w)
-            mask = TF.crop(mask, top, left, crop_h, crop_w)
-        else:
-            image = TF.center_crop(image, output_size=[self.crop_size, self.crop_size])
-            mask = TF.center_crop(mask, output_size=[self.crop_size, self.crop_size])
+            image = torch.roll(image, shifts=(shift_y, shift_x), dims=(1, 2))
+            mask = torch.roll(mask, shifts=(shift_y, shift_x), dims=(1, 2))
 
-        # apply adaptiv pooling
+        image = TF.center_crop(image, output_size=[self.crop_size, self.crop_size])
+        mask = TF.center_crop(mask, output_size=[self.crop_size, self.crop_size])
+
+        # apply adaptive pooling
         image = F.adaptive_avg_pool2d(image, self.target_size)
         mask = F.adaptive_max_pool2d(mask, self.target_size)
 
