@@ -30,23 +30,38 @@ class RandomMaskingStrategy(PretextTaskAction):
     def generate_mask(
         self, batch_size: int, num_patches: int, device: torch.device
     ) -> torch.Tensor:
-        """Creates a boolean mask, either purely random or centrosymmetric."""
+        num_mask = int(num_patches * self.mask_ratio)
 
         if not self.centrosymmetric:
-            rand_tensor = torch.rand(batch_size, num_patches, device=device)
-            return rand_tensor < self.mask_ratio
+            noise = torch.rand(batch_size, num_patches, device=device)
+            ids_shuffle = torch.argsort(noise, dim=1)
+            mask = torch.zeros(batch_size, num_patches, device=device, dtype=torch.bool)
+            for i in range(batch_size):
+                mask[i, ids_shuffle[i, :num_mask]] = True
+            return mask
 
         else:
             half_patches = num_patches // 2
-            rand_half = (
-                torch.rand(batch_size, half_patches, device=device) < self.mask_ratio
+            half_mask_count = num_mask // 2
+
+            noise = torch.rand(batch_size, half_patches, device=device)
+            ids_shuffle = torch.argsort(noise, dim=1)
+
+            rand_half = torch.zeros(
+                batch_size, half_patches, device=device, dtype=torch.bool
             )
+            for i in range(batch_size):
+                rand_half[i, ids_shuffle[i, :half_mask_count]] = True
+
             mirrored_half = torch.flip(rand_half, dims=[1])
             if num_patches % 2 != 0:
-                center_patch = (
-                    torch.rand(batch_size, 1, device=device) < self.mask_ratio
+                center_mask = torch.full(
+                    (batch_size, 1),
+                    (num_mask % 2 != 0),
+                    device=device,
+                    dtype=torch.bool,
                 )
-                return torch.cat([rand_half, center_patch, mirrored_half], dim=1)
+                return torch.cat([rand_half, center_mask, mirrored_half], dim=1)
             else:
                 return torch.cat([rand_half, mirrored_half], dim=1)
 

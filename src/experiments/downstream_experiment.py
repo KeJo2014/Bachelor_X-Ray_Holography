@@ -1,10 +1,10 @@
 import os
 import pytorch_lightning as pl
 import logging
-import mlflow
 import hydra
 import importlib
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 
 from experiments.abstract_experiment import (
@@ -21,6 +21,7 @@ from visualizations.backbone_visualizations import plot_multilabel_confusion_mat
 from omegaconf import DictConfig
 from hydra.utils import instantiate
 
+matplotlib.use("Agg")
 logger = logging.getLogger(__name__)
 
 

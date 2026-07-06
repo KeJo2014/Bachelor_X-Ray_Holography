@@ -103,7 +103,7 @@ class LitMAE(pl.LightningModule):
         return imgs
 
     def forward_encoder(
-        self, x: torch.Tensor
+        self, x: torch.Tensor, mask_1d_strategy: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         B = x.shape[0]
 
@@ -112,11 +112,11 @@ class LitMAE(pl.LightningModule):
         # add positional embeddings without class token
         x = x + self.encoder.pos_embed[:, 1:, :]
 
-        # mask and drop masked patches
         noise = torch.rand(B, self.num_patches, device=x.device)
+        noise = noise + mask_1d_strategy.float() * 10.0
+
         ids_shuffle = torch.argsort(noise, dim=1)
         ids_restore = torch.argsort(ids_shuffle, dim=1)
-
         len_keep = int(self.num_patches * (1 - self.hparams.mask_ratio))
         ids_keep = ids_shuffle[:, :len_keep]
 
@@ -167,10 +167,13 @@ class LitMAE(pl.LightningModule):
     def forward(
         self, x: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        latent, ids_restore, ids_keep = self.forward_encoder(x)
+        B = x.shape[0]
+        mask_1d_strategy = self.pretext_strategy.generate_mask(
+            B, self.num_patches, x.device
+        )
+        latent, ids_restore, ids_keep = self.forward_encoder(x, mask_1d_strategy)
         pred = self.forward_decoder(latent, ids_restore)
 
-        B = x.shape[0]
         mask_1d = torch.ones([B, self.num_patches], device=x.device)
         mask_1d[:, : ids_keep.shape[1]] = 0
         mask_1d = torch.gather(mask_1d, dim=1, index=ids_restore)

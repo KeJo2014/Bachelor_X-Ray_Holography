@@ -1,7 +1,6 @@
 import os
 import pytorch_lightning as pl
 import logging
-import mlflow
 import matplotlib.pyplot as plt
 import hydra
 

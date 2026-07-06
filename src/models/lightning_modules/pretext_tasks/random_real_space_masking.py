@@ -3,6 +3,7 @@ import torch.nn.functional as F
 
 from torch.amp import autocast
 from models.lightning_modules.pretext_tasks.pretext_task_action import PretextTaskAction
+from models.lightning_modules.pretext_tasks.random_masking import RandomMaskingStrategy
 
 
 class RandomMaskingRealSpaceStrategy(PretextTaskAction):
@@ -27,47 +28,29 @@ class RandomMaskingRealSpaceStrategy(PretextTaskAction):
         )
         self.grid_size = img_size // patch_size
         self.centrosymmetric = centrosymmetric
+        self.basic_strategy = RandomMaskingStrategy(
+            img_size=img_size,
+            patch_size=patch_size,
+            mask_ratio=mask_ratio,
+            centrosymmetric=centrosymmetric,
+        )
 
     def generate_mask(
         self, batch_size: int, num_patches: int, device: torch.device
     ) -> torch.Tensor:
         """Creates a boolean mask, either purely random or centrosymmetric."""
-
-        if not self.centrosymmetric:
-            rand_tensor = torch.rand(batch_size, num_patches, device=device)
-            return rand_tensor < self.mask_ratio
-
-        else:
-            half_patches = num_patches // 2
-            rand_half = (
-                torch.rand(batch_size, half_patches, device=device) < self.mask_ratio
-            )
-            mirrored_half = torch.flip(rand_half, dims=[1])
-            if num_patches % 2 != 0:
-                center_patch = (
-                    torch.rand(batch_size, 1, device=device) < self.mask_ratio
-                )
-                return torch.cat([rand_half, center_patch, mirrored_half], dim=1)
-            else:
-                return torch.cat([rand_half, mirrored_half], dim=1)
+        return self.basic_strategy.generate_mask(batch_size, num_patches, device)
 
     def _unpatchify(self, patches: torch.Tensor) -> torch.Tensor:
         """Retransform 1D patches to 2d image"""
-        p = self.patch_size
-        h = w = self.grid_size
-        c = patches.shape[-1] // (p**2)
-
-        x = patches.reshape(shape=(patches.shape[0], h, w, p, p, c))
-        x = torch.einsum("nhwpqc->nchpwq", x)
-        x = x.reshape(shape=(patches.shape[0], c, h * p, w * p))
-        return x
+        return self.basic_strategy._unpatchify(patches=patches)
 
     def compute_loss(
         self, preds: torch.Tensor, targets: torch.Tensor, mask_1d: torch.Tensor
     ) -> torch.Tensor:
         """Calculate real-space MSE loss over the complete reconstruction hologram."""
 
-        with autocast(device_type="cuda", enabled=False):
+        with autocast(device_type=preds.device.type, enabled=False):
             preds_f32 = preds.float()
             targets_f32 = targets.float()
 
