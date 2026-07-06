@@ -7,19 +7,49 @@ from models.lightning_modules.pretext_tasks.pretext_task_action import PretextTa
 
 class RandomMaskingRealSpaceStrategy(PretextTaskAction):
     def __init__(
-        self, img_size: int = 960, patch_size: int = 16, mask_ratio: float = 0.75
+        self,
+        img_size: int = 960,
+        patch_size: int = 16,
+        mask_ratio: float = 0.75,
+        centrosymmetric: bool = True,
     ):
+        """
+        Handles the masking strategy, including mask generation, unpatchifying, and loss computation.
+        The loss is calculated in real space
+
+        :param img_size: Spatial dimensions of the input image in pixels.
+        :param patch_size: Spatial dimensions of a single image patch.
+        :param mask_ratio: Fraction of patches to be masked during training.
+        :param centrosymmetric: If True, applies a centrosymmetric mask to prevent trivial shortcuts.
+        """
         super().__init__(
             img_size=img_size, patch_size=patch_size, mask_ratio=mask_ratio
         )
         self.grid_size = img_size // patch_size
+        self.centrosymmetric = centrosymmetric
 
     def generate_mask(
         self, batch_size: int, num_patches: int, device: torch.device
     ) -> torch.Tensor:
-        """Generates a random boolean mask."""
-        rand_tensor = torch.rand(batch_size, num_patches, device=device)
-        return rand_tensor < self.mask_ratio
+        """Creates a boolean mask, either purely random or centrosymmetric."""
+
+        if not self.centrosymmetric:
+            rand_tensor = torch.rand(batch_size, num_patches, device=device)
+            return rand_tensor < self.mask_ratio
+
+        else:
+            half_patches = num_patches // 2
+            rand_half = (
+                torch.rand(batch_size, half_patches, device=device) < self.mask_ratio
+            )
+            mirrored_half = torch.flip(rand_half, dims=[1])
+            if num_patches % 2 != 0:
+                center_patch = (
+                    torch.rand(batch_size, 1, device=device) < self.mask_ratio
+                )
+                return torch.cat([rand_half, center_patch, mirrored_half], dim=1)
+            else:
+                return torch.cat([rand_half, mirrored_half], dim=1)
 
     def _unpatchify(self, patches: torch.Tensor) -> torch.Tensor:
         """Retransform 1D patches to 2d image"""
