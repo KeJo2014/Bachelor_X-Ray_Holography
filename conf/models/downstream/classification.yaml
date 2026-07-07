@@ -3,14 +3,15 @@ checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/classific
 visualization_type: "multi_label_classification"
 
 backbone:
-  module_class: "models.lightning_modules.backbones.dinov3.Dinov3Backbone"
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/dinov3/<INSERT FOLDER/>/backbone-epoch=04-train_loss=0.0000.ckpt"
+  module_class: "models.lightning_modules.backbones.mae.LitMAE"
+  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/backbone-535-val_loss=0.3094.ckpt"
 
 task:
   _target_: models.lightning_modules.tasks.classification_task.LitClassificationTask
   num_classes: 2
-  freeze_encoder: true
+  freeze_encoder: false
   lr: 1e-4
+  encoder_lr: 1e-5
   warmup_ratio: 0.1
   weight_decay: 0.05
   
@@ -21,6 +22,6 @@ task:
     num_classes: 2
 
 trainer:
-  max_epochs: 3
+  max_epochs: 50
   monitor_metric: "val/f1_macro"
   monitor_mode: "max"

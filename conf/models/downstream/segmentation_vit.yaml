@@ -11,6 +11,7 @@ task:
   _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
   freeze_encoder: true
   lr: 1e-4
+  encoder_lr: 1e-5
   warmup_ratio: 0.1
   weight_decay: 0.05
   
@@ -22,6 +23,6 @@ task:
     img_size: 224
 
 trainer:
-  max_epochs: 5
+  max_epochs: 50
   monitor_metric: "val/F2_Score"
   monitor_mode: "max"

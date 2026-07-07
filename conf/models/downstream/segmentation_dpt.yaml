@@ -1,16 +1,17 @@
 name: "Segmentation"
 checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/segmentation/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 visualization_type: "segmentation"
-log_every_n_epochs: 1
+log_every_n_epochs: 5
 
 backbone:
-  module_class: "models.lightning_modules.backbones.dinov3.Dinov3Backbone"
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/dinov3/<INSERT FOLDER/>/backbone-epoch=04-train_loss=0.0000.ckpt"
+  module_class: "models.lightning_modules.backbones.mae.LitMAE"
+  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/backbone-535-val_loss=0.3094.ckpt"
 
 task:
   _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
-  freeze_encoder: true
+  freeze_encoder: false
   lr: 1e-4
+  encoder_lr: 1e-5
   warmup_ratio: 0.1
   weight_decay: 0.05
   
@@ -20,6 +21,6 @@ task:
     channels: 3
 
 trainer:
-  max_epochs: 1
+  max_epochs: 50
   monitor_metric: "val/F2_Score"
   monitor_mode: "max"

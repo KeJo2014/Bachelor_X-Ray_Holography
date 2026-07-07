@@ -14,6 +14,7 @@ class LitClassificationTask(pl.LightningModule):
         num_classes: int,
         freeze_encoder: bool = False,
         lr: float = 1e-4,
+        encoder_lr: float = 1e-5,
         weight_decay: float = 0.05,
         warmup_ratio: float = 0.1,
     ):
@@ -104,14 +105,20 @@ class LitClassificationTask(pl.LightningModule):
         return self._shared_eval_step(batch, batch_idx, self.test_metrics, "test")
 
     def configure_optimizers(self):
-        # if frozen only optimze the head
-        parameters_to_optimize = (
-            self.head.parameters() if self.hparams.freeze_encoder else self.parameters()
-        )
+        if self.hparams.freeze_encoder:
+            # optimize only the head
+            optimizer_groups = [
+                {"params": self.head.parameters(), "lr": self.hparams.lr}
+            ]
+        else:
+            # full-finetuning
+            optimizer_groups = [
+                {"params": self.encoder.parameters(), "lr": self.hparams.encoder_lr},
+                {"params": self.head.parameters(), "lr": self.hparams.lr},
+            ]
 
         optimizer = torch.optim.AdamW(
-            parameters_to_optimize,
-            lr=self.hparams.lr,
+            optimizer_groups,
             weight_decay=self.hparams.weight_decay,
         )
 
