@@ -173,37 +173,28 @@ def visualize_backbone_results(
     return fig
 
 
-def plot_multilabel_confusion_matrix(
-    matrices: torch.Tensor, num_classes: int, class_names: list = None
-):
+def plot_multiclass_confusion_matrix(matrix: torch.Tensor, class_names: list = None):
     """
-    Plot confusion matrices for a multi-label classification problem.
-    :param matrices: Tensor of shape [num_classes, 2, 2] from TorchMetrics
-    :param num_classes: Integer specifying the number of labels
+    Plot confusion matrix for a multi-class classification problem.
+    :param matrix: Tensor from TorchMetrics
     """
-    matrices_np = matrices.cpu().numpy()
+    matrix_np = matrix.cpu().numpy()
+    fig, ax = plt.subplots(figsize=(8, 6))
 
-    fig, axes = plt.subplots(1, num_classes, figsize=(5 * num_classes, 4))
-    if num_classes == 1:
-        axes = [axes]
+    sns.heatmap(
+        matrix_np,
+        annot=True,
+        fmt="g",
+        cmap="Blues",
+        cbar=False,
+        ax=ax,
+        xticklabels=class_names if class_names else "auto",
+        yticklabels=class_names if class_names else "auto",
+    )
 
-    for i in range(num_classes):
-        ax = axes[i]
-        sns.heatmap(
-            matrices_np[i],
-            annot=True,
-            fmt="g",
-            cmap="Blues",
-            cbar=False,
-            ax=ax,
-            xticklabels=["Pred Neg", "Pred Pos"],
-            yticklabels=["True Neg", "True Pos"],
-        )
-
-        title = class_names[i] if class_names else f"Class {i}"
-        ax.set_title(title)
-        ax.set_xlabel("Prediction")
-        ax.set_ylabel("Ground Truth")
+    ax.set_title("Confusion Matrix")
+    ax.set_xlabel("Prediction")
+    ax.set_ylabel("Ground Truth")
 
     plt.tight_layout()
     return fig

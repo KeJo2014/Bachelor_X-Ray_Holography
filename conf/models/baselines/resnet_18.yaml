@@ -1,6 +1,6 @@
 name: "ResNet-18 Classification Baseline"
 checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/baselines/resnet/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
-visualization_type: "multi_label_classification"
+visualization_type: "multi_class_classification"
 log_every_n_epochs: 1
 
 model:
@@ -8,10 +8,11 @@ model:
   num_classes: 2
   lr: 0.001
   weight_decay: 0.05
-  pretrained: false
+  warmup_ratio: 0.1
+  pretrained: true
   channels: 1
 
 trainer:
-  max_epochs: 2
+  max_epochs: 5
   monitor_metric: "val/f1_macro"
   monitor_mode: "max"

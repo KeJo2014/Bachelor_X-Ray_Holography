@@ -3,8 +3,8 @@ import torch
 import torch.nn.functional as F
 import timm
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
-from metrics.multi_label_classification_metrics import get_metric_collection
-from torchmetrics.classification import MultilabelConfusionMatrix
+from metrics.classification_metrics import get_metric_collection
+from torchmetrics.classification import MulticlassConfusionMatrix
 
 
 class LitResnetBaseline(pl.LightningModule):
@@ -13,14 +13,15 @@ class LitResnetBaseline(pl.LightningModule):
         num_classes: int = 3,
         lr: float = 1e-4,
         weight_decay: float = 0.01,
+        warmup_ratio: float = 0.1,
         pretrained: bool = False,
         channels: int = 3,
     ):
         super().__init__()
         self.save_hyperparameters()
         self.C = channels
-        self.test_conf_mat = MultilabelConfusionMatrix(
-            num_labels=self.hparams.num_classes
+        self.test_conf_mat = MulticlassConfusionMatrix(
+            num_classes=self.hparams.num_classes
         )
 
         self.model = timm.create_model(
@@ -42,8 +43,8 @@ class LitResnetBaseline(pl.LightningModule):
         x, y, _ = batch
         logits = self(x)
 
-        loss = F.binary_cross_entropy_with_logits(logits, y.float())
-        metrics_collection.update(torch.sigmoid(logits), y.long())
+        loss = F.cross_entropy(logits, y)
+        metrics_collection.update(logits, y)
 
         self.log(
             f"{prefix}/loss",
@@ -66,8 +67,8 @@ class LitResnetBaseline(pl.LightningModule):
         x, y, _ = batch
         logits = self(x)
 
-        loss = F.binary_cross_entropy_with_logits(logits, y.float())
-        self.train_metrics.update(logits, y.long())
+        loss = F.cross_entropy(logits, y)
+        self.train_metrics.update(logits, y)
 
         self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         self.log_dict(self.train_metrics, on_step=False, on_epoch=True, prog_bar=False)
@@ -80,7 +81,7 @@ class LitResnetBaseline(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         x, y, _ = batch
         logits = self(x)
-        self.test_conf_mat.update(logits, y.long())
+        self.test_conf_mat.update(logits, y)
         return self._shared_eval_step(batch, self.test_metrics, "test")
 
     def configure_optimizers(self):

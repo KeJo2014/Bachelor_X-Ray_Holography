@@ -1,10 +1,10 @@
 name: "Multi-Label Classification"
 checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/classification/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
-visualization_type: "multi_label_classification"
+visualization_type: "multi_class_classification"
 
 backbone:
   module_class: "models.lightning_modules.backbones.mae.LitMAE"
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/backbone-535-val_loss=0.3094.ckpt"
+  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/2026-07-07_18-10-40/backbone-02-val_loss=0.0028.ckpt"
 
 task:
   _target_: models.lightning_modules.tasks.classification_task.LitClassificationTask
@@ -22,6 +22,6 @@ task:
     num_classes: 2
 
 trainer:
-  max_epochs: 50
+  max_epochs: 3
   monitor_metric: "val/f1_macro"
   monitor_mode: "max"

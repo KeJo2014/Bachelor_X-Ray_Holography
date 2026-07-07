@@ -2,8 +2,8 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
-from metrics.multi_label_classification_metrics import get_metric_collection
-from torchmetrics.classification import MultilabelConfusionMatrix
+from metrics.classification_metrics import get_metric_collection
+from torchmetrics.classification import MulticlassConfusionMatrix
 
 
 class LitClassificationTask(pl.LightningModule):
@@ -32,8 +32,8 @@ class LitClassificationTask(pl.LightningModule):
         self.train_metrics = metrics.clone(prefix="train/")
         self.val_metrics = metrics.clone(prefix="val/")
         self.test_metrics = metrics.clone(prefix="test/")
-        self.test_conf_mat = MultilabelConfusionMatrix(
-            num_labels=self.hparams.num_classes
+        self.test_conf_mat = MulticlassConfusionMatrix(
+            num_classes=self.hparams.num_classes
         )
 
     def train(self, mode: bool = True):
@@ -59,8 +59,8 @@ class LitClassificationTask(pl.LightningModule):
         x, y, _ = batch
         logits = self(x)
 
-        loss = F.binary_cross_entropy_with_logits(logits, y.float())
-        metrics_collection.update(logits, y.long())
+        loss = F.cross_entropy(logits, y)
+        metrics_collection.update(logits, y)
 
         self.log(
             f"{prefix}/loss",
@@ -82,8 +82,8 @@ class LitClassificationTask(pl.LightningModule):
         x, y, _ = batch
         logits = self(x)
 
-        loss = F.binary_cross_entropy_with_logits(logits, y.float())
-        self.train_metrics.update(logits, y.long())
+        loss = F.cross_entropy(logits, y)
+        self.train_metrics.update(logits, y)
 
         self.log(
             f"train/loss",
@@ -101,7 +101,7 @@ class LitClassificationTask(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         x, y, _ = batch
         logits = self(x)
-        self.test_conf_mat.update(logits, y.long())
+        self.test_conf_mat.update(logits, y)
         return self._shared_eval_step(batch, batch_idx, self.test_metrics, "test")
 
     def configure_optimizers(self):

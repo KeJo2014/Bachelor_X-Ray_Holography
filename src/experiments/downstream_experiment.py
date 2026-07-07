@@ -17,7 +17,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, Callback
 from pytorch_lightning.loggers import MLFlowLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from visualizations.segmentation_visualizations import visualize_segmentation_result
-from visualizations.backbone_visualizations import plot_multilabel_confusion_matrix
+from visualizations.backbone_visualizations import plot_multiclass_confusion_matrix
 from omegaconf import DictConfig
 from hydra.utils import instantiate
 
@@ -77,17 +77,16 @@ class VisualizationCallback(Callback):
 
     @rank_zero_only
     def on_test_epoch_end(self, trainer, pl_module):
-        if self.cfg.visualization_type == "multi_label_classification":
-            matrices = pl_module.test_conf_mat.compute()
+        if self.cfg.visualization_type == "multi_class_classification":
+            matrix = pl_module.test_conf_mat.compute()
 
             # create class_name list
             label_map = trainer.datamodule.train_dataset.label_map
             inv_map = {v: k for k, v in label_map.items()}
             class_names = [inv_map[i] for i in range(pl_module.hparams.num_classes)]
 
-            fig = plot_multilabel_confusion_matrix(
-                matrices=matrices,
-                num_classes=pl_module.hparams.num_classes,
+            fig = plot_multiclass_confusion_matrix(
+                matrix=matrix,
                 class_names=class_names,
             )
 

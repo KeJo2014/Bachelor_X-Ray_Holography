@@ -46,11 +46,7 @@ class HologramDataset(Dataset):
             tensor = self.transform(tensor)
 
         # DUMMY LABEL DATA
-        num_classes = 3
-        multi_hot_label = torch.zeros(num_classes, dtype=torch.float32)
-        active_classes = [0, 2]
-        for c in active_classes:
-            multi_hot_label[c] = 1.0
+        multi_hot_label = torch.tensor(0, dtype=torch.long)
 
         _, h, w = tensor.shape
         Y, X = np.ogrid[:h, :w]

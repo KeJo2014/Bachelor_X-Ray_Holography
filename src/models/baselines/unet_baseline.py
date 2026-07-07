@@ -10,6 +10,7 @@ class LitUnetBaseline(pl.LightningModule):
         self,
         lr: float = 1e-4,
         weight_decay: float = 0.01,
+        warmup_ratio: float = 0.1,
         encoder_name: str = "resnet34",
         encoder_weights: str = "imagenet",
         channels: int = 3,
