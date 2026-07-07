@@ -2,6 +2,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 import timm
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 from metrics.multi_label_classification_metrics import get_metric_collection
 from torchmetrics.classification import MultilabelConfusionMatrix
 
@@ -88,4 +89,21 @@ class LitResnetBaseline(pl.LightningModule):
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay,
         )
-        return optimizer
+        total_steps = self.trainer.estimated_stepping_batches
+        warmup_steps = int(total_steps * self.hparams.warmup_ratio)
+
+        warmup = LinearLR(
+            optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_steps
+        )
+        cosine = CosineAnnealingLR(optimizer, T_max=(total_steps - warmup_steps))
+        scheduler = SequentialLR(
+            optimizer, schedulers=[warmup, cosine], milestones=[warmup_steps]
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step",
+                "frequency": 1,
+            },
+        }
