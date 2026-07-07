@@ -5,13 +5,13 @@ parameters:
     _target_: models.lightning_modules.backbones.dinov3.Dinov3Backbone
     pretext_strategy:
       _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
-      patch_size: 224
-      patch_size: 8
-      mask_ratio: 0.75
-    patch_size: 8
+      img_size: 224
+      patch_size: 16
+      mask_ratio: 0.5
+    patch_size: 16
     mask_ratio: 0.75
     lr: 1e-5
     weight_decay: 0.05
     warmup_ratio: 0.05
-    channels: 3
-  num_epochs: 5
+    channels: 1
+  num_epochs: 1

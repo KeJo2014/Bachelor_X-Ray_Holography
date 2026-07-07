@@ -36,7 +36,7 @@ class LitSimMIM(pl.LightningModule):
         torch.nn.init.normal_(self.mask_token, std=0.02)
 
         self.encoder = timm.create_model(
-            "vit_base_patch8_224",
+            "vit_base_patch16_224",
             img_size=img_size,
             patch_size=patch_size,
             pretrained=False,

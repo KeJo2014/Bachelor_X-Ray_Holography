@@ -36,7 +36,7 @@ class LitMAE(pl.LightningModule):
         self.C = channels
 
         self.encoder = timm.create_model(
-            "vit_base_patch8_224",
+            "vit_base_patch16_224",
             img_size=img_size,
             patch_size=patch_size,
             in_chans=self.C,

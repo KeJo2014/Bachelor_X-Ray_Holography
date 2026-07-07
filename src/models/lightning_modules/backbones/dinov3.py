@@ -35,7 +35,7 @@ class Dinov3Backbone(pl.LightningModule):
         torch.nn.init.normal_(self.mask_token, std=0.02)
 
         self.encoder = timm.create_model(
-            "vit_base_patch8_dinov3.lvd1689m",
+            "vit_base_patch16_dinov3.lvd1689m",
             pretrained=True,
             num_classes=0,
             in_chans=self.C,
