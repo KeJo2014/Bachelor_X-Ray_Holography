@@ -63,7 +63,7 @@ class AbstractDataset(pl.LightningDataModule, ABC):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            drop_last=True,
+            drop_last=False,
             persistent_workers=True,
         )
 
@@ -73,6 +73,6 @@ class AbstractDataset(pl.LightningDataModule, ABC):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            drop_last=True,
+            drop_last=False,
             persistent_workers=True,
         )
