@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 # CONSTANTS
 DATA_DIR = Path(r"C:/Users/kelle/Documents/storage/xray/Raw_holo_sim")
 VISUALIZATION_FILE_DESTINATION = (
-    r"C:/Users/kelle/Documents/storage/xray/dataset_parameter_dist.png"
+    r"C:/Users/kelle/Documents/storage/xray/dataset_parameter_dist.pdf"
 )
 CSV_CACHE_DESTINATION = (
     r"C:/Users/kelle/Documents/storage/xray/dataset_metrics_cache.csv"
@@ -133,24 +133,35 @@ def extract_or_load_data():
 
 df = extract_or_load_data()
 
-logging.info(f"Erfolgreich {len(df)} Instanzen geladen.")
+logging.info(f"Loaded {len(df)} Instances.")
 if "pattern_type" in df.columns:
-    logging.info(f"Gefundene Pattern: {df['pattern_type'].dropna().unique().tolist()}")
+    logging.info(f"Detected pattern: {df['pattern_type'].dropna().unique().tolist()}")
 
 # VISUALIZATION
-sns.set_theme(style="whitegrid")
+sns.set_theme(context="paper", style="whitegrid", font_scale=1.2)
+
+# generate color plate
+base_color = "#009EE0"
+target_color = "#002B5B"
+custom_palette = sns.blend_palette([base_color, target_color], n_colors=3)
+
 num_features = len(FEATURES_TO_PLOT)
 cols = 3
 rows = math.ceil(num_features / cols)
 fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
 axes = axes.flatten()
+
 fig.suptitle(
-    "Overview Simulated Parameter Distributions", fontsize=16, fontweight="bold"
+    "Overview Simulated Parameter Distributions",
+    fontsize=18,
+    fontweight="bold",
+    color="#333333",
 )
 
 for i, feature in enumerate(FEATURES_TO_PLOT):
     ax = axes[i]
 
+    # handle 2d data
     if f"{feature}_x" in df.columns and f"{feature}_y" in df.columns:
         sns.scatterplot(
             data=df,
@@ -158,30 +169,64 @@ for i, feature in enumerate(FEATURES_TO_PLOT):
             y=f"{feature}_y",
             ax=ax,
             alpha=0.6,
-            color="purple",
+            color=base_color,
+            edgecolor="none",
+            s=20,
+            rasterized=True,
         )
-        ax.set_title(f"2D Distribution: {feature}", fontsize=12)
+        ax.set_title(f"2D Distribution: {feature}", fontsize=14, fontweight="semibold")
         ax.set_xlabel(f"{feature} X")
         ax.set_ylabel(f"{feature} Y")
 
-    # visualize categorical data
+        ax.grid(axis="both", linestyle="--", alpha=0.7)
+        sns.despine(ax=ax)
+
+    # handle categorical data
     elif df[feature].dtype == "object" or isinstance(
         df[feature].dropna().iloc[0] if not df[feature].dropna().empty else None, str
     ):
         sns.countplot(
-            data=df, x=feature, ax=ax, hue=feature, palette="viridis", legend=False
+            data=df,
+            x=feature,
+            ax=ax,
+            hue=feature,
+            palette=custom_palette,
+            legend=False,
+            edgecolor="white",
         )
-        ax.set_title(f"Distribution: {feature}", fontsize=12)
+        ax.set_title(f"Distribution: {feature}", fontsize=14, fontweight="semibold")
         ax.tick_params(axis="x", rotation=45)
+        ax.set_xlabel("")
+        ax.set_ylabel("Count")
 
-    # visualize numerical data
+        ax.grid(axis="y", linestyle="--", alpha=0.7)
+        ax.grid(axis="x", visible=False)
+        sns.despine(ax=ax)
+
+    # handle numerical data
     else:
-        sns.histplot(data=df, x=feature, kde=True, ax=ax, color="steelblue", bins=20)
-        ax.set_title(f"Distribution: {feature}", fontsize=12)
+        sns.histplot(
+            data=df,
+            x=feature,
+            kde=True,
+            ax=ax,
+            color=base_color,
+            bins=20,
+            edgecolor="white",
+            line_kws={"linewidth": 2},
+        )
+        ax.set_title(f"Distribution: {feature}", fontsize=14, fontweight="semibold")
+        ax.set_ylabel("Frequency")
 
+        ax.grid(axis="y", linestyle="--", alpha=0.7)
+        ax.grid(axis="x", visible=False)
+        sns.despine(ax=ax)
+
+# remove empty plots
 for j in range(i + 1, len(axes)):
     fig.delaxes(axes[j])
 
 plt.tight_layout()
-plt.savefig(VISUALIZATION_FILE_DESTINATION)
+fig.subplots_adjust(top=0.92)
+plt.savefig(VISUALIZATION_FILE_DESTINATION, dpi=300, bbox_inches="tight")
 logging.info(f"visual saved: {VISUALIZATION_FILE_DESTINATION}")
