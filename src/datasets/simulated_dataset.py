@@ -77,7 +77,6 @@ class HologramDataset(Dataset):
         self.transform = transform
         self.mode = mode
         self.add_poisson_noise = add_poisson_noise
-        self._h5_handles = None
 
     def __len__(self):
         if self.mode == "raw":
@@ -103,9 +102,6 @@ class HologramDataset(Dataset):
         return holo
 
     def __getitem__(self, idx):
-        if self._h5_handles is None:
-            self._h5_handles = {}
-
         run_idx = idx // 2 if self.mode == "raw" else idx
         sample_info = self.data_samples[run_idx]
 
@@ -113,15 +109,12 @@ class HologramDataset(Dataset):
         run_key = sample_info["key"]
         label_str = sample_info["label"]
 
-        if filepath not in self._h5_handles:
-            self._h5_handles[filepath] = h5py.File(filepath, "r")
+        with h5py.File(filepath, "r") as h5_file:
+            run_data = h5_file[run_key]
 
-        h5_file = self._h5_handles[filepath]
-        run_data = h5_file[run_key]
-
-        holo_cl = np.squeeze(run_data["CL"]["detected"][:])
-        holo_cr = np.squeeze(run_data["CR"]["detected"][:])
-        mask_np = np.squeeze(run_data["beamstop_mask"][:])
+            holo_cl = np.squeeze(run_data["CL"]["detected"][:])
+            holo_cr = np.squeeze(run_data["CR"]["detected"][:])
+            mask_np = np.squeeze(run_data["beamstop_mask"][:])
 
         if self.add_poisson_noise:
             holo_cl = np.random.poisson(np.clip(holo_cl, 0, None)).astype(np.float32)
@@ -157,15 +150,6 @@ class HologramDataset(Dataset):
         label_tensor = torch.tensor(self.label_map[label_str], dtype=torch.long)
         return tensor, label_tensor, mask_tensor
 
-    def __del__(self):
-        """Cleanup open HDF5 file handles when dataset is destroyed"""
-        if self._h5_handles:
-            for handle in self._h5_handles.values():
-                try:
-                    handle.close()
-                except Exception:
-                    pass
-
 
 class HologramDataModule(LightningDataModule):
     def __init__(
@@ -173,7 +157,7 @@ class HologramDataModule(LightningDataModule):
         data_dir: str,
         batch_size: int = 32,
         num_workers: int = min(
-            13,
+            6,
             max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1)) - 1),
         ),
         center_holograms: bool = True,
@@ -336,7 +320,7 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
 
-    data_path = "C:/Users/kelle/Documents/projects/Data/hologram_sweep"
+    data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim"
     current_mode = "rgb"  # options: rgb, raw, diff
     current_noise = True
 

@@ -106,16 +106,14 @@ class LitClassificationTask(pl.LightningModule):
 
     def configure_optimizers(self):
         head_params = set(self.head.parameters())
-        
+
         if self.hparams.freeze_encoder:
-            optimizer_groups = [
-                {"params": list(head_params), "lr": self.hparams.lr}
-            ]
+            optimizer_groups = [{"params": list(head_params), "lr": self.hparams.lr}]
         else:
             encoder_params_unique = [
                 p for p in self.encoder.parameters() if p not in head_params
             ]
-            
+
             optimizer_groups = [
                 {"params": encoder_params_unique, "lr": self.hparams.encoder_lr},
                 {"params": list(head_params), "lr": self.hparams.lr},
