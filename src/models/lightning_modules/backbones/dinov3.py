@@ -13,7 +13,7 @@ class Dinov3Backbone(pl.LightningModule):
     def __init__(
         self,
         pretext_strategy: PretextTaskAction,
-        img_size: int = 960,
+        img_size: int = 224,
         patch_size: int = 16,
         mask_ratio: float = 0.75,
         lr: float = 1.5e-4,

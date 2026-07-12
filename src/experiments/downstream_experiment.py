@@ -169,15 +169,32 @@ class DownstreamExperiment(AbstractExperiment):
         return getattr(module, class_name)
 
     def _build_model(self) -> pl.LightningModule:
-        logger.info(
-            f"Currently loading trained backbone from file: {self.cfg.backbone.checkpoint_path}"
-        )
-        backbone_class = self._get_class_from_string(self.cfg.backbone.module_class)
-        pretrained_model = backbone_class.load_from_checkpoint(
-            self.cfg.backbone.checkpoint_path
-        )
-        # extract encoder from model
-        encoder = pretrained_model.encoder
+        if self.cfg.backbone.get("use_pretrained_dino", True):
+            import timm
+
+            logger.info("Loading native dinov3 model with frozen weights")
+            encoder = timm.create_model(
+                "vit_base_patch16_dinov3.lvd1689m",
+                pretrained=True,
+                num_classes=0,
+                in_chans=self.cfg.datamodule.get("channels", 3),
+                global_pool="",
+            )
+
+            for param in encoder.parameters():
+                param.requires_grad = False
+
+            encoder.eval()
+        else:
+            logger.info(
+                f"Currently loading trained backbone from file: {self.cfg.backbone.checkpoint_path}"
+            )
+            backbone_class = self._get_class_from_string(self.cfg.backbone.module_class)
+            pretrained_model = backbone_class.load_from_checkpoint(
+                self.cfg.backbone.checkpoint_path
+            )
+            # extract encoder from model
+            encoder = pretrained_model.encoder
 
         logger.info("Initializing new downstream head...")
         head = instantiate(self.cfg.task.head)
