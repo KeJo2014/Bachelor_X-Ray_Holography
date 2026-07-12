@@ -20,6 +20,7 @@ from visualizations.segmentation_visualizations import visualize_segmentation_re
 from visualizations.backbone_visualizations import plot_multiclass_confusion_matrix
 from omegaconf import DictConfig
 from hydra.utils import instantiate
+from torchmetrics.functional.classification import binary_fbeta_score
 
 matplotlib.use("Agg")
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class VisualizationCallback(Callback):
         super().__init__()
         self.log_every_n_epochs = log_every_n_epochs
         self.cfg = config
+        self.last_test_batch = None
 
     @rank_zero_only
     def _log_visualization(
@@ -63,6 +65,7 @@ class VisualizationCallback(Callback):
             self._log_visualization(
                 trainer, pl_module, batch, "visualizations/test_reconstruction.png"
             )
+        self.last_test_batch = batch
 
     def on_validation_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
@@ -99,6 +102,47 @@ class VisualizationCallback(Callback):
                     )
             plt.close(fig)
             pl_module.test_conf_mat.reset()
+        else:
+            if self.last_test_batch is None:
+                return
+            batch = self.last_test_batch
+            batch_x, _, true_mask = batch
+            pl_module.eval()
+
+            with torch.no_grad():
+                logits = pl_module(batch_x.to(pl_module.device))
+                probs = torch.sigmoid(logits)
+                predicted_mask = probs > 0.5
+
+            batch_size = batch_x.size(0)
+            f2_scores = []
+            target_mask = true_mask.long().to(pl_module.device)
+            for b in range(batch_size):
+                f2 = binary_fbeta_score(
+                    predicted_mask[b].flatten(), target_mask[b].flatten(), beta=2.0
+                )
+                f2_scores.append(f2.item())
+            sorted_indices = torch.tensor(f2_scores).argsort().tolist()
+            max_error_masks = min(20, batch_size)
+
+            for i, idx in enumerate(sorted_indices[:max_error_masks]):
+                fig = visualize_segmentation_result(
+                    batch_x[idx, 0].cpu(),
+                    true_mask[idx, 0].cpu(),
+                    predicted_mask[idx, 0].cpu().float(),
+                )
+
+                for logger in trainer.loggers:
+                    if isinstance(logger, MLFlowLogger) and fig is not None:
+                        f2_val = f2_scores[idx]
+                        logger.experiment.log_figure(
+                            logger.run_id,
+                            fig,
+                            f"visualizations/error_masks/error_rank_{i}_f2_{f2_val:.3f}.png",
+                        )
+                plt.close(fig)
+
+            pl_module.train()
 
 
 class DownstreamExperiment(AbstractExperiment):
@@ -193,6 +237,36 @@ class DownstreamExperiment(AbstractExperiment):
         logger.info("Starting test evaluation...")
         trainer.test(self.model, datamodule=self.dataloader, ckpt_path="best")
 
+    def evaluate_only(self):
+        mlflow_logger = MLFlowLogger(
+            tracking_uri=self.config.mlflow_uri,
+            experiment_name="X-Ray Holography",
+            run_name=f"{self.name}_eval",
+        )
+        mlflow_callback = MLflowLoggingCallback(
+            config=self.config, experiment_name="X-Ray Holography"
+        )
+
+        vis_callback = VisualizationCallback(
+            config=self.cfg, log_every_n_epochs=self.cfg.get("log_every_n_epochs", -1)
+        )
+
+        trainer = pl.Trainer(
+            accelerator="auto",
+            devices="auto",
+            logger=mlflow_logger,
+            callbacks=[vis_callback, mlflow_callback],
+            precision="16-mixed",
+        )
+        ckpt_path = self.cfg.get("checkpoint_path")
+        if not ckpt_path:
+            raise ValueError(
+                "For evaluation only puropses must 'checkpoint_path' in conf be set."
+            )
+
+        logger.info(f"Starting test evaluation mit Checkpoint: {ckpt_path}")
+        trainer.test(self.model, datamodule=self.dataloader, ckpt_path=ckpt_path)
+
 
 @hydra.main(
     version_base=None, config_path="../../conf/", config_name="downstream_config"
@@ -210,7 +284,12 @@ def main(cfg: DictConfig):
         experiment_config=experiment,
         config=cfg,
     )
-    downstream_experiment.train_and_evaluate()
+    print(cfg.eval_only_mode)
+    if not bool(cfg.eval_only_mode):
+        downstream_experiment.train_and_evaluate()
+    else:
+        print("running eval only")
+        downstream_experiment.evaluate_only()
 
 
 if __name__ == "__main__":
