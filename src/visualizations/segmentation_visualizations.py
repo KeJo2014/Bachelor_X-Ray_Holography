@@ -193,7 +193,6 @@ if __name__ == "__main__":
             )
 
         except StopIteration:
-            print("End of dataloader")
             btn_next.label.set_text("Done")
             plt.draw()
 

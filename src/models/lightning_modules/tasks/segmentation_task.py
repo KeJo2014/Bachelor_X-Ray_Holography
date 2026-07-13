@@ -67,6 +67,7 @@ class LitSegmentationTask(pl.LightningModule):
     def _shared_eval_step(self, batch, batch_idx, metrics_collection, prefix: str):
         x, _, y_mask = batch
         logits = self(x)
+        preds = (torch.sigmoid(logits) > 0.5).float()
 
         loss = self.loss_function(logits, y_mask)
         probs = torch.sigmoid(logits)
@@ -86,7 +87,7 @@ class LitSegmentationTask(pl.LightningModule):
             on_epoch=True,
             prog_bar=(prefix == "val"),
         )
-        return loss
+        return {"loss": loss, "preds": preds}
 
     def training_step(self, batch, batch_idx):
         x, _, y_mask = batch

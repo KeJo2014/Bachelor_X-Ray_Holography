@@ -6,6 +6,7 @@ import importlib
 import torch
 import matplotlib
 import matplotlib.pyplot as plt
+import heapq
 
 from experiments.abstract_experiment import (
     AbstractExperiment,
@@ -27,13 +28,16 @@ logger = logging.getLogger(__name__)
 
 
 class VisualizationCallback(Callback):
-    """Callback to visualize and log first batch during testing and validation"""
+    """Callback to visualize and log first batch and worst predictions during testing."""
 
-    def __init__(self, config: DictConfig, log_every_n_epochs: int = -1):
+    def __init__(self, config, log_every_n_epochs: int = -1):
         super().__init__()
         self.log_every_n_epochs = log_every_n_epochs
         self.cfg = config
-        self.last_test_batch = None
+
+        # priority queue for bad predictions
+        self.worst_predictions = []
+        self.counter = 0
 
     @rank_zero_only
     def _log_visualization(
@@ -65,7 +69,34 @@ class VisualizationCallback(Callback):
             self._log_visualization(
                 trainer, pl_module, batch, "visualizations/test_reconstruction.png"
             )
-        self.last_test_batch = batch
+
+        if self.cfg.visualization_type != "segmentation":
+            return
+
+        batch_x, _, true_mask = batch
+        predicted_mask = outputs["preds"]
+
+        batch_size = batch_x.size(0)
+        target_mask = true_mask.long().to(pl_module.device)
+
+        for b in range(batch_size):
+            f2 = binary_fbeta_score(
+                predicted_mask[b].flatten(), target_mask[b].flatten(), beta=2.0
+            ).item()
+
+            item = (
+                -f2,
+                self.counter,
+                batch_x[b, 0].cpu(),
+                true_mask[b, 0].cpu(),
+                predicted_mask[b, 0].cpu(),
+            )
+            self.counter += 1
+
+            if len(self.worst_predictions) < 20:
+                heapq.heappush(self.worst_predictions, item)
+            else:
+                heapq.heappushpop(self.worst_predictions, item)
 
     def on_validation_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
@@ -102,47 +133,34 @@ class VisualizationCallback(Callback):
                     )
             plt.close(fig)
             pl_module.test_conf_mat.reset()
-        else:
-            if self.last_test_batch is None:
+        elif self.cfg.visualization_type == "segmentation":
+            if not self.worst_predictions:
                 return
-            batch = self.last_test_batch
-            batch_x, _, true_mask = batch
-            pl_module.eval()
 
-            with torch.no_grad():
-                logits = pl_module(batch_x.to(pl_module.device))
-                probs = torch.sigmoid(logits)
-                predicted_mask = probs > 0.5
+            self.worst_predictions.sort(key=lambda x: x[0], reverse=True)
 
-            batch_size = batch_x.size(0)
-            f2_scores = []
-            target_mask = true_mask.long().to(pl_module.device)
-            for b in range(batch_size):
-                f2 = binary_fbeta_score(
-                    predicted_mask[b].flatten(), target_mask[b].flatten(), beta=2.0
-                )
-                f2_scores.append(f2.item())
-            sorted_indices = torch.tensor(f2_scores).argsort().tolist()
-            max_error_masks = min(20, batch_size)
-
-            for i, idx in enumerate(sorted_indices[:max_error_masks]):
+            for i, (neg_f2, _, img_cpu, true_m_cpu, pred_m_cpu) in enumerate(
+                self.worst_predictions
+            ):
+                f2_val = -neg_f2
                 fig = visualize_segmentation_result(
-                    batch_x[idx, 0].cpu(),
-                    true_mask[idx, 0].cpu(),
-                    predicted_mask[idx, 0].cpu().float(),
+                    img_cpu, true_m_cpu, pred_m_cpu.float()
                 )
 
                 for logger in trainer.loggers:
-                    if isinstance(logger, MLFlowLogger) and fig is not None:
-                        f2_val = f2_scores[idx]
+                    if (
+                        hasattr(logger, "experiment")
+                        and hasattr(logger.experiment, "log_figure")
+                        and fig is not None
+                    ):
                         logger.experiment.log_figure(
                             logger.run_id,
                             fig,
                             f"visualizations/error_masks/error_rank_{i}_f2_{f2_val:.3f}.png",
                         )
                 plt.close(fig)
-
-            pl_module.train()
+            self.worst_predictions.clear()
+            self.counter = 0
 
 
 class DownstreamExperiment(AbstractExperiment):
@@ -177,7 +195,7 @@ class DownstreamExperiment(AbstractExperiment):
                 "vit_base_patch16_dinov3.lvd1689m",
                 pretrained=True,
                 num_classes=0,
-                in_chans=self.cfg.datamodule.get("channels", 3),
+                in_chans=self.cfg.task.head.channels,
                 global_pool="",
             )
 
@@ -301,11 +319,9 @@ def main(cfg: DictConfig):
         experiment_config=experiment,
         config=cfg,
     )
-    print(cfg.eval_only_mode)
     if not bool(cfg.eval_only_mode):
         downstream_experiment.train_and_evaluate()
     else:
-        print("running eval only")
         downstream_experiment.evaluate_only()
 
 
