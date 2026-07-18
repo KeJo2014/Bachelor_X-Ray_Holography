@@ -195,7 +195,7 @@ class DownstreamExperiment(AbstractExperiment):
                 "vit_base_patch16_dinov3.lvd1689m",
                 pretrained=True,
                 num_classes=0,
-                in_chans=self.cfg.task.head.channels,
+                in_chans=self.cfg.backbone.channels,
                 global_pool="",
             )
 
