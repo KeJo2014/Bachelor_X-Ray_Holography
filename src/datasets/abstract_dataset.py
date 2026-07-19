@@ -33,18 +33,6 @@ class AbstractDataset(pl.LightningDataModule, ABC):
         """
         pass
 
-    @abstractmethod
-    def train_dataloader(self) -> DataLoader:
-        pass
-
-    @abstractmethod
-    def test_dataloader(self) -> DataLoader:
-        pass
-
-    @abstractmethod
-    def val_dataloader(self) -> DataLoader:
-        pass
-
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train_dataset,

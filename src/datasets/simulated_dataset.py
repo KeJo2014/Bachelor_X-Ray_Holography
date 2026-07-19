@@ -67,6 +67,8 @@ class HologramDataset(Dataset):
         transform=None,
         mode: str = "raw",
         add_poisson_noise: bool = False,
+        h5_cache_size: int = 4,
+        h5_rdcc_nbytes_mb: int = 16,
     ):
         """
         :param data_samples: list of dicts [{'filepath': str, 'key': str, 'label': str}]
@@ -77,12 +79,35 @@ class HologramDataset(Dataset):
         self.transform = transform
         self.mode = mode
         self.add_poisson_noise = add_poisson_noise
+        self.h5_cache_size = h5_cache_size
+        self.h5_rdcc_nbytes = h5_rdcc_nbytes_mb * (1024**2)
+        self._h5_cache = {}
 
     def __len__(self):
         if self.mode == "raw":
             return len(self.data_samples) * 2
         else:
             return len(self.data_samples)
+
+    def _get_h5_file(self, filepath):
+        if filepath not in self._h5_cache:
+            if len(self._h5_cache) >= self.h5_cache_size:
+                oldest_path = next(iter(self._h5_cache))
+                self._h5_cache.pop(oldest_path).close()
+            self._h5_cache[filepath] = h5py.File(
+                filepath,
+                "r",
+                rdcc_nbytes=self.h5_rdcc_nbytes,
+                rdcc_nslots=10007,
+            )
+        return self._h5_cache[filepath]
+
+    def __del__(self):
+        for f in self._h5_cache.values():
+            try:
+                f.close()
+            except Exception:
+                pass
 
     def _scale_hologram(self, holo, is_diff=False):
         if is_diff:
@@ -109,12 +134,12 @@ class HologramDataset(Dataset):
         run_key = sample_info["key"]
         label_str = sample_info["label"]
 
-        with h5py.File(filepath, "r") as h5_file:
-            run_data = h5_file[run_key]
+        h5_file = self._get_h5_file(filepath)
+        run_data = h5_file[run_key]
 
-            holo_cl = np.squeeze(run_data["CL"]["detected"][:])
-            holo_cr = np.squeeze(run_data["CR"]["detected"][:])
-            mask_np = np.squeeze(run_data["beamstop_mask"][:])
+        holo_cl = np.squeeze(run_data["CL"]["detected"][:])
+        holo_cr = np.squeeze(run_data["CR"]["detected"][:])
+        mask_np = np.squeeze(run_data["beamstop_mask"][:])
 
         if self.add_poisson_noise:
             holo_cl = np.random.poisson(np.clip(holo_cl, 0, None)).astype(np.float32)
@@ -164,6 +189,9 @@ class HologramDataModule(LightningDataModule):
         mode: str = "rgb",
         add_poisson_noise: bool = False,
         limit_samples: int = None,
+        h5_cache_size: int = 4,
+        h5_rdcc_nbytes_mb: int = 16,
+        prefetch_factor: int = 4,
     ):
         super().__init__()
         self.data_dir = Path(data_dir)
@@ -175,6 +203,10 @@ class HologramDataModule(LightningDataModule):
         self.mode = mode
         self.limit_samples = limit_samples
         self.setup_loaded = False
+
+        self.h5_cache_size = h5_cache_size
+        self.h5_rdcc_nbytes_mb = h5_rdcc_nbytes_mb
+        self.prefetch_factor = prefetch_factor
 
         self.transform = CDICropAndBinTransform(
             crop_size=self.initial_crop_size,
@@ -270,6 +302,8 @@ class HologramDataModule(LightningDataModule):
             transform=self.transform,
             mode=self.mode,
             add_poisson_noise=self.add_poisson_noise,
+            h5_cache_size=self.h5_cache_size,
+            h5_rdcc_nbytes_mb=self.h5_rdcc_nbytes_mb,
         )
         self.val_dataset = HologramDataset(
             val_samples,
@@ -277,6 +311,8 @@ class HologramDataModule(LightningDataModule):
             transform=self.transform,
             mode=self.mode,
             add_poisson_noise=self.add_poisson_noise,
+            h5_cache_size=self.h5_cache_size,
+            h5_rdcc_nbytes_mb=self.h5_rdcc_nbytes_mb,
         )
         self.test_dataset = HologramDataset(
             test_samples,
@@ -284,6 +320,8 @@ class HologramDataModule(LightningDataModule):
             transform=self.transform,
             mode=self.mode,
             add_poisson_noise=self.add_poisson_noise,
+            h5_cache_size=self.h5_cache_size,
+            h5_rdcc_nbytes_mb=self.h5_rdcc_nbytes_mb,
         )
 
         self.setup_loaded = True
@@ -295,6 +333,8 @@ class HologramDataModule(LightningDataModule):
             num_workers=self.num_workers,
             shuffle=True,
             pin_memory=True,
+            persistent_workers=True if self.num_workers > 0 else False,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def val_dataloader(self):
@@ -304,6 +344,8 @@ class HologramDataModule(LightningDataModule):
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
+            persistent_workers=True if self.num_workers > 0 else False,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self):
@@ -313,6 +355,8 @@ class HologramDataModule(LightningDataModule):
             num_workers=self.num_workers,
             shuffle=False,
             pin_memory=True,
+            persistent_workers=True if self.num_workers > 0 else False,
+            prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
 
