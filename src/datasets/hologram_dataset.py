@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import logging
 import torchvision.transforms as T
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from datasets.abstract_dataset import AbstractDataset
 from sklearn.model_selection import train_test_split
 
@@ -129,35 +129,3 @@ class HologramDataModule(AbstractDataset):
         )
 
         self.setup_loaded = True
-
-    def train_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
-            shuffle=True,
-            num_workers=self.num_workers,
-            drop_last=True,
-            persistent_workers=True,
-            prefetch_factor=2,
-            pin_memory=True,
-        )
-
-    def test_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            drop_last=False,
-            persistent_workers=True,
-        )
-
-    def val_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            num_workers=self.num_workers,
-            drop_last=False,
-            persistent_workers=True,
-        )

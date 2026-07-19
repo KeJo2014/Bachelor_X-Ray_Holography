@@ -10,39 +10,11 @@ import torchvision.transforms.functional as TF
 import scipy.ndimage
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
-import functools
 from pytorch_lightning import LightningDataModule
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
-
-import random
-from torch.utils.data import Sampler
-
-
-class ChunkedHDF5Sampler(Sampler):
-    def __init__(self, file_index_ranges, batch_size):
-        self.file_index_ranges = file_index_ranges
-        self.batch_size = batch_size
-        self.file_ids = list(file_index_ranges.keys())
-
-    def __iter__(self):
-        random.shuffle(self.file_ids)
-
-        for file_id in self.file_ids:
-            start_idx, end_idx = self.file_index_ranges[file_id]
-            indices_in_file = list(range(start_idx, end_idx))
-            random.shuffle(indices_in_file)
-
-            for i in range(0, len(indices_in_file), self.batch_size):
-                yield indices_in_file[i : i + self.batch_size]
-
-    def __len__(self):
-        total_samples = sum(
-            end - start for start, end in self.file_index_ranges.values()
-        )
-        return total_samples // self.batch_size
 
 
 class CDICropAndBinTransform:
@@ -129,10 +101,6 @@ class HologramDataset(Dataset):
                 holo = holo - h_min
         return holo
 
-    @functools.lru_cache(maxsize=4)
-    def _get_h5_file(self, filepath):
-        return h5py.File(filepath, "r", swmr=True)
-
     def __getitem__(self, idx):
         run_idx = idx // 2 if self.mode == "raw" else idx
         sample_info = self.data_samples[run_idx]
@@ -141,12 +109,12 @@ class HologramDataset(Dataset):
         run_key = sample_info["key"]
         label_str = sample_info["label"]
 
-        h5_file = self._get_h5_file(filepath)
-        run_data = h5_file[run_key]
+        with h5py.File(filepath, "r") as h5_file:
+            run_data = h5_file[run_key]
 
-        holo_cl = np.squeeze(run_data["CL"]["detected"][:])
-        holo_cr = np.squeeze(run_data["CR"]["detected"][:])
-        mask_np = np.squeeze(run_data["beamstop_mask"][:])
+            holo_cl = np.squeeze(run_data["CL"]["detected"][:])
+            holo_cr = np.squeeze(run_data["CR"]["detected"][:])
+            mask_np = np.squeeze(run_data["beamstop_mask"][:])
 
         if self.add_poisson_noise:
             holo_cl = np.random.poisson(np.clip(holo_cl, 0, None)).astype(np.float32)
@@ -296,11 +264,6 @@ class HologramDataModule(LightningDataModule):
             random_state=42,
         )
 
-        # sort by filepath to create file that are consecutive in storage
-        train_samples.sort(key=lambda x: x["filepath"])
-        val_samples.sort(key=lambda x: x["filepath"])
-        test_samples.sort(key=lambda x: x["filepath"])
-
         self.train_dataset = HologramDataset(
             train_samples,
             self.label_map,
@@ -325,50 +288,21 @@ class HologramDataModule(LightningDataModule):
 
         self.setup_loaded = True
 
-    def _get_file_ranges(self, dataset):
-        """Findet heraus, von welchem bis zu welchem Index eine HDF5 Datei im Dataset reicht."""
-        ranges = {}
-        current_file = None
-        start_idx = 0
-
-        for i in range(len(dataset)):
-            run_idx = i // 2 if dataset.mode == "raw" else i
-            filepath = dataset.data_samples[run_idx]["filepath"]
-
-            if filepath != current_file:
-                if current_file is not None:
-                    ranges[current_file] = (start_idx, i)
-                current_file = filepath
-                start_idx = i
-
-        if current_file is not None:
-            ranges[current_file] = (start_idx, len(dataset))
-
-        return ranges
-
     def train_dataloader(self):
-        # 1. Berechne die Ranges für das Trainings-Set
-        file_ranges = self._get_file_ranges(self.train_dataset)
-
-        # 2. Hier wird die Batch Size übergeben!
-        sampler = ChunkedHDF5Sampler(file_ranges, batch_size=self.batch_size)
-
         return DataLoader(
             self.train_dataset,
-            batch_sampler=sampler,  # Ersetzt batch_size und shuffle
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
-            persistent_workers=True if self.num_workers > 0 else False,
+            shuffle=True,
             pin_memory=True,
         )
 
     def val_dataloader(self):
-        # Validation braucht kein aufwändiges Chunking, sequentielles Lesen ist schnell genug
         return DataLoader(
             self.val_dataset,
-            batch_size=self.batch_size,  # Hier ganz normal
-            shuffle=False,
+            batch_size=self.batch_size,
             num_workers=self.num_workers,
-            persistent_workers=True if self.num_workers > 0 else False,
+            shuffle=False,
             pin_memory=True,
         )
 
@@ -376,9 +310,8 @@ class HologramDataModule(LightningDataModule):
         return DataLoader(
             self.test_dataset,
             batch_size=self.batch_size,
-            shuffle=False,
             num_workers=self.num_workers,
-            persistent_workers=True if self.num_workers > 0 else False,
+            shuffle=False,
             pin_memory=True,
         )
 
