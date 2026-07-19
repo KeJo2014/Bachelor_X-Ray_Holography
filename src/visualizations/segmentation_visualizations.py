@@ -163,7 +163,7 @@ if __name__ == "__main__":
             cr = x_img[1]
 
             # simulate stronger imperfections
-            intensity_factor = 1.05  # intensity variations
+            intensity_factor = 1.05
             cr_imperfect = cr * intensity_factor
 
             # subpixel drift

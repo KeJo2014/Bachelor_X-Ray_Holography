@@ -1,8 +1,11 @@
 import pytorch_lightning as pl
 import torch
+import logging
 from metrics.segmentation_metrics import get_metric_collection
 from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
-from models.loss_functions import CenterFocusedTverskyLoss
+from models.loss_functions import CenterFocusedTverskyLoss, DiceLoss
+
+logger = logging.getLogger(__name__)
 
 
 class LitSegmentationTask(pl.LightningModule):
@@ -15,14 +18,21 @@ class LitSegmentationTask(pl.LightningModule):
         encoder_lr: float = 1e-5,
         weight_decay: float = 0.05,
         warmup_ratio: float = 0.1,
+        selected_loss: str = "tversky",
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["encoder", "head"])
         self.encoder = encoder
         self.head = head
-        self.loss_function = (
-            CenterFocusedTverskyLoss()
-        )  # TODO: Adjust Parameters -> Hyperparams?
+        if selected_loss == "dice":
+            self.loss_function = DiceLoss()
+        elif selected_loss == "tversky":
+            self.loss_function = (
+                CenterFocusedTverskyLoss()
+            )  # TODO: Adjust Parameters -> Hyperparams?
+        else:
+            logger.error("Invalid Segmentation mask loss function defined. Exiting.")
+            exit()
 
         # can freeze backbone
         if self.hparams.freeze_encoder:
