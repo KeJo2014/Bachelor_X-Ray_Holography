@@ -131,12 +131,7 @@ class HologramDataset(Dataset):
 
     @functools.lru_cache(maxsize=4)
     def _get_h5_file(self, filepath):
-        return h5py.File(
-            filepath,
-            "r",
-            rdcc_nbytes=100 * (1024**2),  # 100 MB Cache
-            rdcc_nslots=10007,  # Primzahl für Hash-Table)
-        )
+        return h5py.File(filepath, "r", swmr=True)
 
     def __getitem__(self, idx):
         run_idx = idx // 2 if self.mode == "raw" else idx
@@ -194,7 +189,7 @@ class HologramDataModule(LightningDataModule):
         data_dir: str,
         batch_size: int = 32,
         num_workers: int = min(
-            12,
+            6,
             max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1)) - 1),
         ),
         center_holograms: bool = True,
@@ -331,7 +326,7 @@ class HologramDataModule(LightningDataModule):
         self.setup_loaded = True
 
     def _get_file_ranges(self, dataset):
-        """Identify start and end index of hdf5 file."""
+        """Findet heraus, von welchem bis zu welchem Index eine HDF5 Datei im Dataset reicht."""
         ranges = {}
         current_file = None
         start_idx = 0
@@ -352,27 +347,29 @@ class HologramDataModule(LightningDataModule):
         return ranges
 
     def train_dataloader(self):
+        # 1. Berechne die Ranges für das Trainings-Set
         file_ranges = self._get_file_ranges(self.train_dataset)
+
+        # 2. Hier wird die Batch Size übergeben!
         sampler = ChunkedHDF5Sampler(file_ranges, batch_size=self.batch_size)
 
         return DataLoader(
             self.train_dataset,
-            batch_sampler=sampler,
+            batch_sampler=sampler,  # Ersetzt batch_size und shuffle
             num_workers=self.num_workers,
             persistent_workers=True if self.num_workers > 0 else False,
             pin_memory=True,
-            prefetch_factor=5,
         )
 
     def val_dataloader(self):
+        # Validation braucht kein aufwändiges Chunking, sequentielles Lesen ist schnell genug
         return DataLoader(
             self.val_dataset,
-            batch_size=self.batch_size,
+            batch_size=self.batch_size,  # Hier ganz normal
             shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=True if self.num_workers > 0 else False,
             pin_memory=True,
-            prefetch_factor=2,
         )
 
     def test_dataloader(self):
@@ -383,7 +380,6 @@ class HologramDataModule(LightningDataModule):
             num_workers=self.num_workers,
             persistent_workers=True if self.num_workers > 0 else False,
             pin_memory=True,
-            prefetch_factor=2,
         )
 
 
