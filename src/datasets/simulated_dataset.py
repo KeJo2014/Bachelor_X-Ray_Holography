@@ -1,95 +1,62 @@
 import os
+import io
+import json
 import glob
 import torch
-import numpy as np
-import pandas as pd
+import random
 import logging
-import h5py
+import tifffile
+import numpy as np
+import webdataset as wds
+import random
 from pathlib import Path
-from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
-from sklearn.model_selection import train_test_split
-from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
+LABEL_MAP = {
+    "binary_labyrinth_pattern": 0,
+    "saturated_pattern": 1,
+    "disordered_skyrmion_lattice_pattern": 2,
+}
 
-class HologramDataset(Dataset):
-    def __init__(
-        self,
-        data_samples: list,
-        label_map: dict,
-        mode: str = "raw",
-        h5_cache_size: int = 4,
-        h5_rdcc_nbytes_mb: int = 16,
-    ):
-        self.data_samples = data_samples
-        self.label_map = label_map
-        self.mode = mode
-        self.h5_cache_size = h5_cache_size
-        self.h5_rdcc_nbytes = h5_rdcc_nbytes_mb * (1024**2)
-        self._h5_cache = {}
 
-    def __len__(self):
-        if self.mode == "raw":
-            return len(self.data_samples) * 2
+def decode_stream(data_iterator, mode="rgb", label_map=None):
+    for sample in data_iterator:
+        meta = json.loads(sample["json"])
+
+        lbl_str = meta["metadata"]["sample"]["magnetic_pattern"]["pattern_type_method"]
+        label_idx = label_map.get(lbl_str, 0)
+        label = torch.tensor(label_idx, dtype=torch.long)
+
+        cl = tifffile.imread(io.BytesIO(sample["cl.tiff"])).astype(np.float32)
+        cr = tifffile.imread(io.BytesIO(sample["cr.tiff"])).astype(np.float32)
+        mask = tifffile.imread(io.BytesIO(sample["beamstop_mask.tiff"])).astype(
+            np.float32
+        )
+
+        mask_tensor = torch.from_numpy(mask).unsqueeze(0)
+
+        if mode in ["rgb", "diff"]:
+            tensor = torch.from_numpy(np.stack([cl, cr], axis=0))
+            yield tensor, label, mask_tensor
+
+        elif mode == "raw":
+            tensor_cl = torch.from_numpy(cl).unsqueeze(0)
+            yield tensor_cl, label, mask_tensor
+
+            tensor_cr = torch.from_numpy(cr).unsqueeze(0)
+            yield tensor_cr, label, mask_tensor
+
         else:
-            return len(self.data_samples)
-
-    def _get_h5_file(self, filepath):
-        if filepath not in self._h5_cache:
-            if len(self._h5_cache) >= self.h5_cache_size:
-                oldest_path = next(iter(self._h5_cache))
-                self._h5_cache.pop(oldest_path).close()
-            self._h5_cache[filepath] = h5py.File(
-                filepath,
-                "r",
-                rdcc_nbytes=self.h5_rdcc_nbytes,
-                rdcc_nslots=10007,
-            )
-        return self._h5_cache[filepath]
-
-    def __del__(self):
-        for f in self._h5_cache.values():
-            try:
-                f.close()
-            except Exception:
-                pass
-
-    def __getitem__(self, idx):
-        run_idx = idx // 2 if self.mode == "raw" else idx
-        sample_info = self.data_samples[run_idx]
-
-        filepath = sample_info["filepath"]
-        run_key = sample_info["key"]
-        label_str = sample_info["label"]
-
-        h5_file = self._get_h5_file(filepath)
-        run_data = h5_file[run_key]
-
-        holo_cl = np.squeeze(run_data["CL"]["detected"][:]).astype(np.float32)
-        holo_cr = np.squeeze(run_data["CR"]["detected"][:]).astype(np.float32)
-        mask_np = np.squeeze(run_data["beamstop_mask"][:]).astype(np.float32)
-
-        if self.mode in ["rgb", "diff"]:
-            tensor = torch.from_numpy(np.stack([holo_cl, holo_cr], axis=0))
-        elif self.mode == "raw":
-            is_cr = idx % 2
-            holo = holo_cr if is_cr else holo_cl
-            tensor = torch.from_numpy(holo).unsqueeze(0)
-        else:
-            raise ValueError(f"Unknown mode specified: {self.mode}")
-
-        mask_tensor = torch.from_numpy(mask_np).unsqueeze(0)
-        label_tensor = torch.tensor(self.label_map[label_str], dtype=torch.long)
-
-        return tensor, label_tensor, mask_tensor
+            raise ValueError(f"Unknown mode specified: {mode}")
 
 
 class HologramDataModule(LightningDataModule):
     def __init__(
         self,
         data_dir: str,
+        total_samples: int,
         batch_size: int = 32,
         num_workers: int = min(
             12,
@@ -97,9 +64,6 @@ class HologramDataModule(LightningDataModule):
         ),
         mode: str = "rgb",
         add_poisson_noise: bool = False,
-        limit_samples: int = None,
-        h5_cache_size: int = 4,
-        h5_rdcc_nbytes_mb: int = 16,
         prefetch_factor: int = 6,
     ):
         super().__init__()
@@ -108,123 +72,108 @@ class HologramDataModule(LightningDataModule):
         self.num_workers = num_workers
         self.add_poisson_noise = add_poisson_noise
         self.mode = mode
-        self.limit_samples = limit_samples
-        self.setup_loaded = False
-        self.h5_cache_size = h5_cache_size
-        self.h5_rdcc_nbytes_mb = h5_rdcc_nbytes_mb
         self.prefetch_factor = prefetch_factor
+        self.label_map = LABEL_MAP
+        self.setup_loaded = False
+        self.total_samples = total_samples
 
-    def _build_or_load_index(self):
-        index_file = self.data_dir / "dataset_index.csv"
-        if index_file.exists():
-            logger.info(f"Loading metadata index from {index_file}")
-            df = pd.read_csv(index_file, dtype={"key": str})
-            return df.to_dict("records")
-
-        logger.info(f"No index found. Scanning HDF5 files in {self.data_dir}...")
-        h5_files = sorted(glob.glob(str(self.data_dir / "*.h5")))
-        if not h5_files:
-            raise FileNotFoundError(f"No .h5 files found in {self.data_dir}")
-
-        data_samples = []
-        for file_path in tqdm(h5_files, desc="Indexing H5 files"):
-            try:
-                with h5py.File(file_path, "r") as f:
-                    run_keys = [
-                        k for k in f.keys() if k != "_pipeline_config" and k.isdigit()
-                    ]
-                    for key in run_keys:
-                        meta = f[key]["metadata"]
-                        if "magnetic_pattern" in meta.keys():
-                            lbl = meta["magnetic_pattern"]["pattern_type_method"][()]
-                        else:
-                            lbl = meta["sample"]["magnetic_pattern"][
-                                "pattern_type_method"
-                            ][()]
-                        if isinstance(lbl, bytes):
-                            lbl = lbl.decode("utf-8")
-                        data_samples.append(
-                            {"filepath": file_path, "key": key, "label": lbl}
-                        )
-            except Exception as e:
-                logger.error(f"Error reading {file_path}: {e}")
-
-        df = pd.DataFrame(data_samples)
-        df.to_csv(index_file, index=False)
-        return data_samples
+        if mode == "raw":
+            self.total_samples *= 2
 
     def setup(self, stage=None):
         if self.setup_loaded:
             return
-        all_samples = self._build_or_load_index()
-        run_labels = [s["label"] for s in all_samples]
-        unique_labels = sorted(list(set(run_labels)))
-        self.label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
 
-        if self.limit_samples is not None and self.limit_samples < len(all_samples):
-            all_samples, _, run_labels, _ = train_test_split(
-                all_samples,
-                run_labels,
-                train_size=self.limit_samples,
-                stratify=run_labels,
-                random_state=42,
-            )
+        raw_shards = sorted(glob.glob(str(self.data_dir / "*.tar")))
+        random.Random(42).shuffle(raw_shards)
+        if not raw_shards:
+            raise FileNotFoundError(f"Keine .tar Dateien in {self.data_dir} gefunden.")
+        shards = [f"file:{Path(p).as_posix()}" for p in raw_shards]
 
-        train_samples, temp_samples, _, temp_labels = train_test_split(
-            all_samples, run_labels, test_size=0.2, stratify=run_labels, random_state=42
-        )
-        val_samples, test_samples, _, _ = train_test_split(
-            temp_samples,
-            temp_labels,
-            test_size=0.5,
-            stratify=temp_labels,
-            random_state=42,
-        )
+        num_shards = len(shards)
+        # generate split on archive level
+        train_end = int(0.8 * num_shards)
+        val_end = int(0.9 * num_shards)
 
-        self.train_dataset = HologramDataset(
-            train_samples, self.label_map, mode=self.mode
-        )
-        self.val_dataset = HologramDataset(val_samples, self.label_map, mode=self.mode)
-        self.test_dataset = HologramDataset(
-            test_samples, self.label_map, mode=self.mode
+        self.train_urls = shards[:train_end]
+        self.val_urls = shards[train_end:val_end]
+        self.test_urls = shards[val_end:]
+
+        total_urls = len(self.train_urls) + len(self.val_urls) + len(self.test_urls)
+        if total_urls > 0:
+            train_ratio = len(self.train_urls) / total_urls
+            self.train_samples = int(self.total_samples * train_ratio)
+        else:
+            self.train_samples = 0
+
+        logger.info(
+            f"Shards aufgeteilt: Train={len(self.train_urls)}, Val={len(self.val_urls)}, Test={len(self.test_urls)}"
         )
         self.setup_loaded = True
 
+    def _create_dataset(self, urls, is_train=False):
+        if not urls:
+            raise ValueError(f"No urls received!")
+
+        dataset = wds.WebDataset(
+            urls,
+            resampled=is_train,
+            nodesplitter=wds.split_by_node,
+            shardshuffle=False,
+            empty_check=False,
+        )
+
+        if is_train:
+            dataset = dataset.shuffle(1000)
+        dataset = dataset.compose(
+            lambda it: decode_stream(it, self.mode, self.label_map)
+        )
+        if is_train and self.mode == "raw":
+            dataset = dataset.shuffle(100)
+
+        dataset = dataset.batched(self.batch_size, partial=not is_train)
+
+        if is_train and self.train_samples > 0:
+            batches_per_epoch = self.train_samples // self.batch_size
+            dataset = dataset.with_epoch(batches_per_epoch).with_length(
+                batches_per_epoch
+            )
+        return dataset
+
     def train_dataloader(self):
-        return DataLoader(
-            self.train_dataset,
-            batch_size=self.batch_size,
+        dataset = self._create_dataset(self.train_urls, is_train=True)
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_size=None,
             num_workers=self.num_workers,
-            shuffle=True,
             pin_memory=True,
             persistent_workers=True if self.num_workers > 0 else False,
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def val_dataloader(self):
-        return DataLoader(
-            self.val_dataset,
-            batch_size=self.batch_size,
+        dataset = self._create_dataset(self.val_urls, is_train=False)
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_size=None,
             num_workers=self.num_workers,
-            shuffle=False,
             pin_memory=True,
             persistent_workers=True if self.num_workers > 0 else False,
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def test_dataloader(self):
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.batch_size,
+        dataset = self._create_dataset(self.test_urls, is_train=False)
+        return torch.utils.data.DataLoader(
+            dataset,
+            batch_size=None,
             num_workers=self.num_workers,
-            shuffle=False,
             pin_memory=True,
             persistent_workers=True if self.num_workers > 0 else False,
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
     def on_after_batch_transfer(self, batch, dataloader_idx):
-        """Calculate matrix operations on GPU for preprocessing."""
         raw_tensor, labels, masks = batch
 
         def scale_gpu(holo, is_diff=False):
@@ -262,12 +211,13 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
 
-    data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced"
-    current_mode = "rgb"
-    current_noise = True
+    data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
+    current_mode = "raw"
+    current_noise = False
 
     data_module = HologramDataModule(
         data_dir=data_path,
+        total_samples=5000,
         batch_size=4,
         num_workers=0,
         mode=current_mode,
@@ -301,7 +251,10 @@ if __name__ == "__main__":
             self.data_iter = iter(self.dataloader)
             self.inv_map = inv_map
             self.mode = mode
-            self.current_batch = next(self.data_iter)
+
+            raw_batch = next(self.data_iter)
+            self.current_batch = data_module.on_after_batch_transfer(raw_batch, 0)
+
             self.batch_idx = 0
             self.batch_size = self.current_batch[0].shape[0]
 
@@ -309,25 +262,31 @@ if __name__ == "__main__":
             self.batch_idx += 1
             if self.batch_idx >= self.batch_size:
                 try:
-                    self.current_batch = next(self.data_iter)
+                    raw_batch = next(self.data_iter)
+                    self.current_batch = data_module.on_after_batch_transfer(
+                        raw_batch, 0
+                    )
                     self.batch_idx = 0
                     self.batch_size = self.current_batch[0].shape[0]
                 except StopIteration:
                     self.data_iter = iter(self.dataloader)
-                    self.current_batch = next(self.data_iter)
+                    raw_batch = next(self.data_iter)
+                    self.current_batch = data_module.on_after_batch_transfer(
+                        raw_batch, 0
+                    )
                     self.batch_idx = 0
             self.update_plot()
 
         def update_plot(self):
             holo, label, mask = self.current_batch
             idx = self.batch_idx
-            m = mask[idx].squeeze(0).numpy()
+            m = mask[idx].squeeze(0).cpu().numpy()
             class_idx = label[idx].item()
             class_name = self.inv_map.get(class_idx, "Unknown")
 
             if self.mode == "rgb":
-                cl_raw = holo[idx][0].numpy()
-                cr_raw = holo[idx][1].numpy()
+                cl_raw = holo[idx][0].cpu().numpy()
+                cr_raw = holo[idx][1].cpu().numpy()
                 h_cl = cpu_scale_for_plot(cl_raw, False)
                 h_cr = cpu_scale_for_plot(cr_raw, False)
                 h_diff = cpu_scale_for_plot(cl_raw - cr_raw, True)
@@ -341,7 +300,7 @@ if __name__ == "__main__":
                 img_diff.set_clim(vmin=-max_val, vmax=max_val)
             else:
                 h_single = cpu_scale_for_plot(
-                    holo[idx][0].numpy(), is_diff=(self.mode == "diff")
+                    holo[idx][0].cpu().numpy(), is_diff=(self.mode == "diff")
                 )
                 img_single.set_data(h_single)
                 if self.mode == "diff":
@@ -360,15 +319,15 @@ if __name__ == "__main__":
 
     viewer = ViewerState(train_loader, inv_label_map, data_module.mode)
     holo_init, label_init, mask_init_batch = viewer.current_batch
-    mask_init = mask_init_batch[0].squeeze(0).numpy()
+    mask_init = mask_init_batch[0].squeeze(0).cpu().numpy()
     init_class = inv_label_map.get(label_init[0].item(), "Unknown")
 
     if data_module.mode == "rgb":
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(22, 6))
         plt.subplots_adjust(bottom=0.25)
 
-        init_cl_raw = holo_init[0][0].numpy()
-        init_cr_raw = holo_init[0][1].numpy()
+        init_cl_raw = holo_init[0][0].cpu().numpy()
+        init_cr_raw = holo_init[0][1].cpu().numpy()
         init_cl = cpu_scale_for_plot(init_cl_raw, False)
         init_cr = cpu_scale_for_plot(init_cr_raw, False)
         init_diff = cpu_scale_for_plot(init_cl_raw - init_cr_raw, True)
@@ -395,7 +354,7 @@ if __name__ == "__main__":
         plt.subplots_adjust(bottom=0.25)
 
         init_single = cpu_scale_for_plot(
-            holo_init[0][0].numpy(), is_diff=(data_module.mode == "diff")
+            holo_init[0][0].cpu().numpy(), is_diff=(data_module.mode == "diff")
         )
         cmap = "coolwarm" if data_module.mode == "diff" else "viridis"
         img_single = ax1.imshow(init_single, cmap=cmap)

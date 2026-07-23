@@ -83,7 +83,7 @@ class VisualizationCallback(Callback):
             matrix = pl_module.test_conf_mat.compute()
 
             # create classname list
-            label_map = trainer.datamodule.train_dataset.label_map
+            label_map = trainer.datamodule.label_map
             inv_map = {v: k for k, v in label_map.items()}
             class_names = [inv_map[i] for i in range(pl_module.hparams.num_classes)]
 

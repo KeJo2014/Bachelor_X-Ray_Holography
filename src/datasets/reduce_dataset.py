@@ -1,16 +1,74 @@
+import argparse
 import glob
-import h5py
-import torch
+import io
+import json
+import tarfile
+import time
 import numpy as np
 import scipy.ndimage
+import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
+import h5py
+import tifffile
 from pathlib import Path
 from tqdm import tqdm
 
 
+class ShardWriter:
+    def __init__(self, pattern, maxcount=100000, maxsize=3e9):
+        self.pattern = pattern
+        self.maxcount = maxcount
+        self.maxsize = maxsize
+        self.shard = -1
+        self.tarstream = None
+        self.count = 0
+        self.size = 0
+        self.fname = None
+        self._next_stream()
+
+    def _next_stream(self):
+        if self.tarstream is not None:
+            self.tarstream.close()
+        self.shard += 1
+        self.fname = self.pattern % self.shard
+        Path(self.fname).parent.mkdir(parents=True, exist_ok=True)
+        self.tarstream = tarfile.open(self.fname, "w")
+        self.count = 0
+        self.size = 0
+
+    def write(self, sample):
+        if self.count >= self.maxcount or self.size >= self.maxsize:
+            self._next_stream()
+
+        key = sample["__key__"]
+        for name, value in sample.items():
+            if name == "__key__":
+                continue
+            if isinstance(value, str):
+                value = value.encode("utf-8")
+            info = tarfile.TarInfo(name=f"{key}.{name}")
+            info.size = len(value)
+            info.mtime = time.time()
+            self.tarstream.addfile(info, io.BytesIO(value))
+            self.size += len(value)
+
+        self.count += 1
+
+    def close(self):
+        if self.tarstream is not None:
+            self.tarstream.close()
+            self.tarstream = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
 def calculate_shift(image_np):
-    """Calculate hologra center shift."""
+    """Calculate hologram center shift."""
     threshold = np.percentile(image_np, 99.0)
     bright_core = image_np > threshold
     center_y, center_x = scipy.ndimage.center_of_mass(bright_core)
@@ -40,91 +98,180 @@ def transform_array(
     return t.squeeze(0).numpy().astype(np.float32)
 
 
-def process_dataset(data_dir: str):
+def _convert_value(value):
+    if isinstance(value, (bytes, np.bytes_)):
+        return value.decode("utf-8", errors="replace")
+
+    if isinstance(value, np.generic):
+        return _convert_value(value.item())
+
+    if isinstance(value, np.ndarray):
+        return [_convert_value(v) for v in value.tolist()]
+
+    if isinstance(value, (list, tuple)):
+        return [_convert_value(v) for v in value]
+
+    if isinstance(value, dict):
+        return {k: _convert_value(v) for k, v in value.items()}
+
+    return value
+
+
+def _attr_to_native(val):
+    return _convert_value(val)
+
+
+def h5_to_native(obj):
+    if isinstance(obj, h5py.Dataset):
+        return _convert_value(obj[()])
+
+    if isinstance(obj, h5py.Group):
+        result = {}
+        for key, val in obj.items():
+            result[key] = h5_to_native(val)
+        if obj.attrs:
+            result["_attrs"] = {k: _attr_to_native(v) for k, v in obj.attrs.items()}
+        return result
+
+    return _convert_value(obj)
+
+
+def array_to_tiff_bytes(array):
+    buf = io.BytesIO()
+    tifffile.imwrite(buf, array)
+    return buf.getvalue()
+
+
+def process_dataset(
+    data_dir: str,
+    worker_id: int,
+    num_workers: int,
+    maxcount: int = 1000,
+    maxsize: float = 3e9,
+):
     data_dir = Path(data_dir)
-    reduced_dir = data_dir / "reduced"
+    reduced_dir = data_dir / "reduced2"
     reduced_dir.mkdir(exist_ok=True)
+    shard_pattern = str(reduced_dir / f"shard-w{worker_id:04d}-%06d.tar")
+    all_h5_files = sorted(glob.glob(str(data_dir / "*.h5")))
 
-    h5_files = sorted(glob.glob(str(data_dir / "*.h5")))
+    if not all_h5_files:
+        print(f"Worker {worker_id}: Keine .h5 Dateien in {data_dir} gefunden.")
+        return
 
-    for file_path in h5_files:
-        filename = Path(file_path).name
-        out_path = reduced_dir / filename
+    my_files = all_h5_files[worker_id::num_workers]
 
-        print(f"Process: {filename} -> {out_path}")
+    print(f"Worker {worker_id}/{num_workers - 1} started.")
+    print(f"Processing {len(my_files)} of {len(all_h5_files)} files.")
 
-        with h5py.File(file_path, "r") as f_in, h5py.File(out_path, "w") as f_out:
-            if "_pipeline_config" in f_in.keys():
-                f_in.copy("_pipeline_config", f_out)
+    if not my_files:
+        print(f"Worker {worker_id}: No files to work with. Stopping.")
+        return
 
-            run_keys = [
-                k for k in f_in.keys() if k != "_pipeline_config" and k.isdigit()
-            ]
+    datasets_to_process = {
+        "cl": ("CL/detected", False),
+        "cr": ("CR/detected", False),
+        "cl_no_beamstop": ("CL/detected_no_beamstop", False),
+        "cr_no_beamstop": ("CR/detected_no_beamstop", False),
+        "beamstop_mask": ("beamstop_mask", True),
+    }
 
-            for key in tqdm(run_keys, desc=f"Runs in {filename}", leave=False):
-                run_group_out = f_out.create_group(key)
+    with ShardWriter(shard_pattern, maxcount=maxcount, maxsize=maxsize) as sink:
+        for file_path in my_files:
+            filename = Path(file_path).name
+            stem = Path(file_path).stem
 
-                # copy metadata
-                if "metadata" in f_in[key]:
-                    f_in.copy(f"{key}/metadata", run_group_out)
-                if "sample" in f_in[key]:
-                    f_in.copy(f"{key}/sample", run_group_out)
+            print(f"[Worker {worker_id}] Processing: {filename}")
 
-                run_data_in = f_in[key]
+            with h5py.File(file_path, "r") as f_in:
+                run_keys = [
+                    k for k in f_in.keys() if k != "_pipeline_config" and k.isdigit()
+                ]
 
-                # calc shift
-                cl_raw = np.squeeze(run_data_in["CL"]["detected"][:])
-                shift_y, shift_x = calculate_shift(cl_raw)
+                pipeline_config = None
+                if "_pipeline_config" in f_in.keys():
+                    pipeline_config = h5_to_native(f_in["_pipeline_config"])
+                desc = f"W{worker_id}: {filename}"
+                for key in tqdm(run_keys, desc=desc, leave=False):
+                    run_data_in = f_in[key]
 
-                datasets_to_process = {
-                    "CL": ("CL/detected", False),
-                    "CR": ("CR/detected", False),
-                    "CL_no_beamstop": ("CL/detected_no_beamstop", False),
-                    "CR_no_beamstop": ("CR/detected_no_beamstop", False),
-                    "beamstop_mask": ("beamstop_mask", True),
-                }
+                    metadata = {"source_file": filename, "run_key": key}
+                    if "metadata" in run_data_in:
+                        metadata["metadata"] = h5_to_native(run_data_in["metadata"])
+                    if "sample" in run_data_in:
+                        metadata["sample"] = h5_to_native(run_data_in["sample"])
+                    if pipeline_config is not None:
+                        metadata["pipeline_config"] = pipeline_config
 
-                for ds_name, (h5_path, is_mask) in datasets_to_process.items():
-                    parts = h5_path.split("/")
-                    node = run_data_in
-                    exists = True
-                    for p in parts:
-                        if p in node:
-                            node = node[p]
-                        else:
-                            exists = False
-                            break
+                    # calc shift
+                    cl_raw = np.squeeze(run_data_in["CL"]["detected"][:])
+                    shift_y, shift_x = calculate_shift(cl_raw)
 
-                    if exists:
-                        raw_data = np.squeeze(node[:])
-                        processed_data = transform_array(
-                            raw_data,
-                            shift_y,
-                            shift_x,
-                            crop_size=960,
-                            target_size=224,
-                            is_mask=is_mask,
-                        )
+                    # construct sample
+                    sample = {
+                        "__key__": f"{stem}_{key}",
+                        "json": json.dumps(metadata, default=str).encode("utf-8"),
+                    }
 
-                        if "/" in h5_path:
-                            group_name, ds_name = h5_path.split("/")
-                            if group_name not in run_group_out:
-                                run_group_out.create_group(group_name)
-                            target_group = run_group_out[group_name]
-                        else:
-                            target_group = run_group_out
-                            ds_name = h5_path
+                    for ds_name, (h5_path, is_mask) in datasets_to_process.items():
+                        parts = h5_path.split("/")
+                        node = run_data_in
+                        exists = True
+                        for p in parts:
+                            if p in node:
+                                node = node[p]
+                            else:
+                                exists = False
+                                break
 
-                        target_group.create_dataset(
-                            ds_name,
-                            data=processed_data,
-                            dtype=np.float32,
-                            chunks=True,
-                            compression="lzf",
-                        )
+                        if exists:
+                            raw_data = np.squeeze(node[:])
+                            processed_data = transform_array(
+                                raw_data,
+                                shift_y,
+                                shift_x,
+                                crop_size=960,
+                                target_size=224,
+                                is_mask=is_mask,
+                            )
+                            sample[f"{ds_name}.tiff"] = array_to_tiff_bytes(
+                                processed_data
+                            )
+
+                    sink.write(sample)
+
+    print(f"Worker {worker_id} fertig. Shards gespeichert in '{reduced_dir}'.")
 
 
 if __name__ == "__main__":
-    data_path = "/home/jkeller/dataset"
-    process_dataset(data_path)
-    print("Done. File are stored in subfolder 'reduced'.")
+    parser = argparse.ArgumentParser(
+        description="Process H5 datasets into WebDataset shards."
+    )
+    parser.add_argument(
+        "--data_dir", type=str, required=True, help="path to h5 data directory"
+    )
+    parser.add_argument(
+        "--worker_id",
+        type=int,
+        default=0,
+        help="id of specific job in slurm array task",
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=1, help="number of jobs in task array"
+    )
+    parser.add_argument(
+        "--maxcount", type=int, default=1000, help="max sample count per shard-file"
+    )
+
+    args = parser.parse_args()
+    if args.worker_id < 0 or args.worker_id >= args.num_workers:
+        raise ValueError(
+            f"worker_id ({args.worker_id}) muss zwischen 0 und num_workers-1 ({args.num_workers-1}) liegen."
+        )
+
+    process_dataset(
+        data_dir=args.data_dir,
+        worker_id=args.worker_id,
+        num_workers=args.num_workers,
+        maxcount=args.maxcount,
+    )
