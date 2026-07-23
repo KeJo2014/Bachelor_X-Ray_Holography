@@ -5,9 +5,6 @@ import numpy as np
 import pandas as pd
 import logging
 import h5py
-import torch.nn.functional as F
-import torchvision.transforms.functional as TF
-import scipy.ndimage
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 from pytorch_lightning import LightningDataModule
@@ -17,68 +14,18 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-class CDICropAndBinTransform:
-    """
-    Computes central crop with average pixel binning for CDI data
-    Use average for diffraction image and max pooling for the beamstop mask
-    """
-
-    def __init__(self, crop_size: int, target_size: int, center_holograms: bool = True):
-        self.crop_size = crop_size
-        self.target_size = (target_size, target_size)
-        self.center_holograms = center_holograms
-
-    def __call__(self, image, mask):
-        if self.center_holograms:
-            image_np = image.numpy()[0]
-            # apply threshold to get brightest 1% of pixels -> halo around hologram center
-            threshold = np.percentile(image_np, 99.0)
-            bright_core = image_np > threshold
-
-            # calculate hologram center coordinates
-            center_y, center_x = scipy.ndimage.center_of_mass(bright_core)
-            if np.isnan(center_y) or np.isnan(center_x):
-                cy, cx = image.shape[1] // 2, image.shape[2] // 2
-            else:
-                cy, cx = int(round(center_y)), int(round(center_x))
-
-            _, h, w = image.shape
-            shift_y = (h // 2) - cy
-            shift_x = (w // 2) - cx
-
-            image = torch.roll(image, shifts=(shift_y, shift_x), dims=(1, 2))
-            mask = torch.roll(mask, shifts=(shift_y, shift_x), dims=(1, 2))
-
-        image = TF.center_crop(image, output_size=[self.crop_size, self.crop_size])
-        mask = TF.center_crop(mask, output_size=[self.crop_size, self.crop_size])
-
-        # apply adaptive pooling
-        image = F.adaptive_avg_pool2d(image, self.target_size)
-        mask = F.adaptive_max_pool2d(mask, self.target_size)
-
-        return image, mask
-
-
 class HologramDataset(Dataset):
     def __init__(
         self,
         data_samples: list,
         label_map: dict,
-        transform=None,
         mode: str = "raw",
-        add_poisson_noise: bool = False,
         h5_cache_size: int = 4,
         h5_rdcc_nbytes_mb: int = 16,
     ):
-        """
-        :param data_samples: list of dicts [{'filepath': str, 'key': str, 'label': str}]
-        :param label_map: dict mapping string labels to integers
-        """
         self.data_samples = data_samples
         self.label_map = label_map
-        self.transform = transform
         self.mode = mode
-        self.add_poisson_noise = add_poisson_noise
         self.h5_cache_size = h5_cache_size
         self.h5_rdcc_nbytes = h5_rdcc_nbytes_mb * (1024**2)
         self._h5_cache = {}
@@ -109,23 +56,6 @@ class HologramDataset(Dataset):
             except Exception:
                 pass
 
-    def _scale_hologram(self, holo, is_diff=False):
-        if is_diff:
-            holo = np.sign(holo) * np.log1p(np.abs(holo))
-            max_abs = np.max(np.abs(holo))
-            if max_abs > 0:
-                holo = holo / max_abs
-        else:
-            holo = np.clip(holo, 0, None)
-            holo = np.log1p(holo)
-            h_min = holo.min()
-            h_max = holo.max()
-            if h_max > h_min:
-                holo = (holo - h_min) / (h_max - h_min)
-            else:
-                holo = holo - h_min
-        return holo
-
     def __getitem__(self, idx):
         run_idx = idx // 2 if self.mode == "raw" else idx
         sample_info = self.data_samples[run_idx]
@@ -137,42 +67,22 @@ class HologramDataset(Dataset):
         h5_file = self._get_h5_file(filepath)
         run_data = h5_file[run_key]
 
-        holo_cl = np.squeeze(run_data["CL"]["detected"][:])
-        holo_cr = np.squeeze(run_data["CR"]["detected"][:])
-        mask_np = np.squeeze(run_data["beamstop_mask"][:])
+        holo_cl = np.squeeze(run_data["CL"]["detected"][:]).astype(np.float32)
+        holo_cr = np.squeeze(run_data["CR"]["detected"][:]).astype(np.float32)
+        mask_np = np.squeeze(run_data["beamstop_mask"][:]).astype(np.float32)
 
-        if self.add_poisson_noise:
-            holo_cl = np.random.poisson(np.clip(holo_cl, 0, None)).astype(np.float32)
-            holo_cr = np.random.poisson(np.clip(holo_cr, 0, None)).astype(np.float32)
-
-        if self.mode == "rgb":
-            holo_diff = holo_cl - holo_cr
-            holo_cl = self._scale_hologram(holo_cl, is_diff=False)
-            holo_cr = self._scale_hologram(holo_cr, is_diff=False)
-            holo_diff = self._scale_hologram(holo_diff, is_diff=True)
-            tensor = torch.from_numpy(
-                np.stack([holo_cl, holo_cr, holo_diff], axis=0)
-            ).float()
-
-        elif self.mode == "diff":
-            holo_diff = holo_cl - holo_cr
-            holo_diff = self._scale_hologram(holo_diff, is_diff=True)
-            tensor = torch.from_numpy(holo_diff).float().unsqueeze(0)
-
+        if self.mode in ["rgb", "diff"]:
+            tensor = torch.from_numpy(np.stack([holo_cl, holo_cr], axis=0))
         elif self.mode == "raw":
             is_cr = idx % 2
             holo = holo_cr if is_cr else holo_cl
-            holo = self._scale_hologram(holo, is_diff=False)
-            tensor = torch.from_numpy(holo).float().unsqueeze(0)
+            tensor = torch.from_numpy(holo).unsqueeze(0)
         else:
             raise ValueError(f"Unknown mode specified: {self.mode}")
 
-        mask_tensor = torch.from_numpy(mask_np).float().unsqueeze(0)
-
-        if self.transform:
-            tensor, mask_tensor = self.transform(tensor, mask_tensor)
-
+        mask_tensor = torch.from_numpy(mask_np).unsqueeze(0)
         label_tensor = torch.tensor(self.label_map[label_str], dtype=torch.long)
+
         return tensor, label_tensor, mask_tensor
 
 
@@ -182,52 +92,37 @@ class HologramDataModule(LightningDataModule):
         data_dir: str,
         batch_size: int = 32,
         num_workers: int = min(
-            6,
+            12,
             max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1)) - 1),
         ),
-        center_holograms: bool = True,
         mode: str = "rgb",
         add_poisson_noise: bool = False,
         limit_samples: int = None,
         h5_cache_size: int = 4,
         h5_rdcc_nbytes_mb: int = 16,
-        prefetch_factor: int = 4,
+        prefetch_factor: int = 6,
     ):
         super().__init__()
         self.data_dir = Path(data_dir)
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.img_size = 224
-        self.initial_crop_size = 960
         self.add_poisson_noise = add_poisson_noise
         self.mode = mode
         self.limit_samples = limit_samples
         self.setup_loaded = False
-
         self.h5_cache_size = h5_cache_size
         self.h5_rdcc_nbytes_mb = h5_rdcc_nbytes_mb
         self.prefetch_factor = prefetch_factor
 
-        self.transform = CDICropAndBinTransform(
-            crop_size=self.initial_crop_size,
-            target_size=self.img_size,
-            center_holograms=center_holograms,
-        )
-
     def _build_or_load_index(self):
-        """Scans HDF5 files once and creates a CSV index or loads it if it already exists."""
         index_file = self.data_dir / "dataset_index.csv"
-
         if index_file.exists():
             logger.info(f"Loading metadata index from {index_file}")
             df = pd.read_csv(index_file, dtype={"key": str})
             return df.to_dict("records")
 
-        logger.info(
-            f"No index found. Scanning HDF5 files in {self.data_dir} (This happens only once)..."
-        )
+        logger.info(f"No index found. Scanning HDF5 files in {self.data_dir}...")
         h5_files = sorted(glob.glob(str(self.data_dir / "*.h5")))
-
         if not h5_files:
             raise FileNotFoundError(f"No .h5 files found in {self.data_dir}")
 
@@ -246,37 +141,27 @@ class HologramDataModule(LightningDataModule):
                             lbl = meta["sample"]["magnetic_pattern"][
                                 "pattern_type_method"
                             ][()]
-
                         if isinstance(lbl, bytes):
                             lbl = lbl.decode("utf-8")
-
                         data_samples.append(
                             {"filepath": file_path, "key": key, "label": lbl}
                         )
             except Exception as e:
                 logger.error(f"Error reading {file_path}: {e}")
 
-        # save to cache for next time
         df = pd.DataFrame(data_samples)
         df.to_csv(index_file, index=False)
-        logger.info(f"Saved dataset index to {index_file}")
-
         return data_samples
 
     def setup(self, stage=None):
         if self.setup_loaded:
             return
-
         all_samples = self._build_or_load_index()
         run_labels = [s["label"] for s in all_samples]
         unique_labels = sorted(list(set(run_labels)))
         self.label_map = {lbl: i for i, lbl in enumerate(unique_labels)}
 
-        logger.info(f"Found {len(all_samples)} total runs. Classes: {self.label_map}")
-
-        # generate stratified splits
         if self.limit_samples is not None and self.limit_samples < len(all_samples):
-            logger.info(f"Reducing dataset to {self.limit_samples} instances.")
             all_samples, _, run_labels, _ = train_test_split(
                 all_samples,
                 run_labels,
@@ -285,7 +170,7 @@ class HologramDataModule(LightningDataModule):
                 random_state=42,
             )
 
-        train_samples, temp_samples, train_labels, temp_labels = train_test_split(
+        train_samples, temp_samples, _, temp_labels = train_test_split(
             all_samples, run_labels, test_size=0.2, stratify=run_labels, random_state=42
         )
         val_samples, test_samples, _, _ = train_test_split(
@@ -297,33 +182,12 @@ class HologramDataModule(LightningDataModule):
         )
 
         self.train_dataset = HologramDataset(
-            train_samples,
-            self.label_map,
-            transform=self.transform,
-            mode=self.mode,
-            add_poisson_noise=self.add_poisson_noise,
-            h5_cache_size=self.h5_cache_size,
-            h5_rdcc_nbytes_mb=self.h5_rdcc_nbytes_mb,
+            train_samples, self.label_map, mode=self.mode
         )
-        self.val_dataset = HologramDataset(
-            val_samples,
-            self.label_map,
-            transform=self.transform,
-            mode=self.mode,
-            add_poisson_noise=self.add_poisson_noise,
-            h5_cache_size=self.h5_cache_size,
-            h5_rdcc_nbytes_mb=self.h5_rdcc_nbytes_mb,
-        )
+        self.val_dataset = HologramDataset(val_samples, self.label_map, mode=self.mode)
         self.test_dataset = HologramDataset(
-            test_samples,
-            self.label_map,
-            transform=self.transform,
-            mode=self.mode,
-            add_poisson_noise=self.add_poisson_noise,
-            h5_cache_size=self.h5_cache_size,
-            h5_rdcc_nbytes_mb=self.h5_rdcc_nbytes_mb,
+            test_samples, self.label_map, mode=self.mode
         )
-
         self.setup_loaded = True
 
     def train_dataloader(self):
@@ -359,13 +223,47 @@ class HologramDataModule(LightningDataModule):
             prefetch_factor=self.prefetch_factor if self.num_workers > 0 else None,
         )
 
+    def on_after_batch_transfer(self, batch, dataloader_idx):
+        """Calculate matrix operations on GPU for preprocessing."""
+        raw_tensor, labels, masks = batch
+
+        def scale_gpu(holo, is_diff=False):
+            if is_diff:
+                signs = torch.sign(holo)
+                holo = holo.abs_().log1p_()
+                holo = signs * holo
+                max_abs = torch.amax(holo.abs(), dim=(-2, -1), keepdim=True)
+                holo = torch.where(max_abs > 0, holo / max_abs, holo)
+            else:
+                holo = holo.clamp_(min=0).log1p_()
+                h_min = torch.amin(holo, dim=(-2, -1), keepdim=True)
+                h_max = torch.amax(holo, dim=(-2, -1), keepdim=True)
+                denominator = torch.clamp(h_max - h_min, min=1e-8)
+                holo = (holo - h_min) / denominator
+            return holo
+
+        if self.add_poisson_noise:
+            raw_tensor = torch.poisson(raw_tensor.clamp_(min=0))
+
+        if self.mode == "rgb":
+            t_cl = scale_gpu(raw_tensor[:, 0:1], is_diff=False)
+            t_cr = scale_gpu(raw_tensor[:, 1:2], is_diff=False)
+            t_diff = scale_gpu(raw_tensor[:, 0:1] - raw_tensor[:, 1:2], is_diff=True)
+            tensor = torch.cat([t_cl, t_cr, t_diff], dim=1)
+        elif self.mode == "diff":
+            tensor = scale_gpu(raw_tensor[:, 0:1] - raw_tensor[:, 1:2], is_diff=True)
+        elif self.mode == "raw":
+            tensor = scale_gpu(raw_tensor, is_diff=False)
+
+        return tensor, labels, masks
+
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
 
-    data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim"
-    current_mode = "rgb"  # options: rgb, raw, diff
+    data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced"
+    current_mode = "rgb"
     current_noise = True
 
     data_module = HologramDataModule(
@@ -373,13 +271,29 @@ if __name__ == "__main__":
         batch_size=4,
         num_workers=0,
         mode=current_mode,
-        center_holograms=True,
         add_poisson_noise=current_noise,
     )
 
     data_module.setup()
     train_loader = data_module.train_dataloader()
     inv_label_map = {v: k for k, v in data_module.label_map.items()}
+
+    def cpu_scale_for_plot(holo, is_diff=False):
+        if is_diff:
+            holo = np.sign(holo) * np.log1p(np.abs(holo))
+            max_abs = np.max(np.abs(holo))
+            if max_abs > 0:
+                holo = holo / max_abs
+        else:
+            holo = np.clip(holo, 0, None)
+            holo = np.log1p(holo)
+            h_min = holo.min()
+            h_max = holo.max()
+            if h_max > h_min:
+                holo = (holo - h_min) / (h_max - h_min)
+            else:
+                holo = holo - h_min
+        return holo
 
     class ViewerState:
         def __init__(self, dataloader, inv_map, mode):
@@ -402,35 +316,34 @@ if __name__ == "__main__":
                     self.data_iter = iter(self.dataloader)
                     self.current_batch = next(self.data_iter)
                     self.batch_idx = 0
-
             self.update_plot()
 
         def update_plot(self):
             holo, label, mask = self.current_batch
             idx = self.batch_idx
             m = mask[idx].squeeze(0).numpy()
-
             class_idx = label[idx].item()
             class_name = self.inv_map.get(class_idx, "Unknown")
 
             if self.mode == "rgb":
-                h_cl = holo[idx][0].squeeze().numpy()
-                h_cr = holo[idx][1].squeeze().numpy()
-                h_diff = holo[idx][2].squeeze().numpy()
+                cl_raw = holo[idx][0].numpy()
+                cr_raw = holo[idx][1].numpy()
+                h_cl = cpu_scale_for_plot(cl_raw, False)
+                h_cr = cpu_scale_for_plot(cr_raw, False)
+                h_diff = cpu_scale_for_plot(cl_raw - cr_raw, True)
 
                 img_cl.set_data(h_cl)
                 img_cl.set_clim(vmin=h_cl.min(), vmax=h_cl.max())
-
                 img_cr.set_data(h_cr)
                 img_cr.set_clim(vmin=h_cr.min(), vmax=h_cr.max())
-
                 img_diff.set_data(h_diff)
                 max_val = max(abs(h_diff.min()), abs(h_diff.max()))
                 img_diff.set_clim(vmin=-max_val, vmax=max_val)
             else:
-                h_single = holo[idx][0].squeeze().numpy()
+                h_single = cpu_scale_for_plot(
+                    holo[idx][0].numpy(), is_diff=(self.mode == "diff")
+                )
                 img_single.set_data(h_single)
-
                 if self.mode == "diff":
                     max_val = max(abs(h_single.min()), abs(h_single.max()))
                     img_single.set_clim(vmin=-max_val, vmax=max_val)
@@ -446,7 +359,6 @@ if __name__ == "__main__":
             fig.canvas.draw_idle()
 
     viewer = ViewerState(train_loader, inv_label_map, data_module.mode)
-
     holo_init, label_init, mask_init_batch = viewer.current_batch
     mask_init = mask_init_batch[0].squeeze(0).numpy()
     init_class = inv_label_map.get(label_init[0].item(), "Unknown")
@@ -455,9 +367,11 @@ if __name__ == "__main__":
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(22, 6))
         plt.subplots_adjust(bottom=0.25)
 
-        init_cl = holo_init[0][0].squeeze().numpy()
-        init_cr = holo_init[0][1].squeeze().numpy()
-        init_diff = holo_init[0][2].squeeze().numpy()
+        init_cl_raw = holo_init[0][0].numpy()
+        init_cr_raw = holo_init[0][1].numpy()
+        init_cl = cpu_scale_for_plot(init_cl_raw, False)
+        init_cr = cpu_scale_for_plot(init_cr_raw, False)
+        init_diff = cpu_scale_for_plot(init_cl_raw - init_cr_raw, True)
 
         img_cl = ax1.imshow(init_cl, cmap="viridis")
         ax1.set_title("Kanal 0: CL")
@@ -476,12 +390,13 @@ if __name__ == "__main__":
         img_mask = ax4.imshow(mask_init, cmap="gray")
         ax4.set_title("Beamstop Maske")
         fig.colorbar(img_mask, ax=ax4, fraction=0.046, pad=0.04)
-
     else:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
         plt.subplots_adjust(bottom=0.25)
 
-        init_single = holo_init[0][0].squeeze().numpy()
+        init_single = cpu_scale_for_plot(
+            holo_init[0][0].numpy(), is_diff=(data_module.mode == "diff")
+        )
         cmap = "coolwarm" if data_module.mode == "diff" else "viridis"
         img_single = ax1.imshow(init_single, cmap=cmap)
         ax1.set_title("Hologram (RAW)" if data_module.mode == "raw" else "Diff-Holo")
