@@ -130,18 +130,19 @@ if __name__ == "__main__":
 
     pl.seed_everything(44)
 
-    data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim"
+    data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
     current_mode = "rgb"
 
     data_module = HologramDataModule(
         data_path,
         mode=current_mode,
-        center_holograms=True,
+        total_samples=5000,
         add_poisson_noise=False,
+        num_workers=0
     )
     data_module.setup()
     train_loader = data_module.train_dataloader()
-    inv_label_map = {v: k for k, v in data_module.train_dataset.label_map.items()}
+    inv_label_map = {v: k for k, v in data_module.label_map.items()}
 
     batch_iterator = iter(train_loader)
     fig_control, ax_control = plt.subplots(figsize=(4, 1.5))

@@ -12,6 +12,7 @@ segmentation_models_pytorch==0.5.0
 mlflow==3.12.0
 optuna==4.8.0
 hydra-submitit-launcher==1.2.0
+hydra-optuna-sweeper==1.2.0
 
 # --- Data Science & Utils ---
 numpy==2.4.4

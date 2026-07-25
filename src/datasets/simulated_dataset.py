@@ -107,7 +107,7 @@ class HologramDataModule(LightningDataModule):
             self.train_samples = 0
 
         logger.info(
-            f"Shards aufgeteilt: Train={len(self.train_urls)}, Val={len(self.val_urls)}, Test={len(self.test_urls)}"
+            f"Shards distributed: Train={len(self.train_urls)}, Val={len(self.val_urls)}, Test={len(self.test_urls)}"
         )
         self.setup_loaded = True
 
