@@ -138,7 +138,7 @@ if __name__ == "__main__":
         mode=current_mode,
         total_samples=5000,
         add_poisson_noise=False,
-        num_workers=0
+        num_workers=0,
     )
     data_module.setup()
     train_loader = data_module.train_dataloader()
