@@ -262,7 +262,7 @@ class DownstreamExperiment(AbstractExperiment):
             devices="auto",
             logger=mlflow_logger,
             callbacks=[checkpoint_callback, mlflow_callback, vis_callback],
-            precision="16-mixed",
+            precision="bf16-mixed",
         )
         self.run_id = trainer.logger.run_id
 
