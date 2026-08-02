@@ -225,3 +225,5 @@ src/mlflow.db
 # optuna logs
 src/multirun/*
 src/optuna.db
+
+src/visualizations/paper_visualizations/*

@@ -158,7 +158,10 @@ def main(cfg: DictConfig):
     ModelClass = get_class(variation.parameters.model._target_)
 
     if not cfg.eval_only_mode:
-        model = instantiate(variation.parameters.model, img_size=datamodule.img_size)
+        model = instantiate(
+            variation.parameters.model,
+            img_size=variation.parameters.model.pretext_strategy.img_size,
+        )
         experiment.train_model(model)
 
         current_val_loss = experiment.model.trainer.callback_metrics.get("val/loss")
