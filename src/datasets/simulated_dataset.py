@@ -65,6 +65,7 @@ class HologramDataModule(LightningDataModule):
         mode: str = "rgb",
         add_poisson_noise: bool = False,
         prefetch_factor: int = 6,
+        train_fraction: float = 1.0,
     ):
         super().__init__()
         self.data_dir = Path(data_dir)
@@ -76,6 +77,7 @@ class HologramDataModule(LightningDataModule):
         self.label_map = LABEL_MAP
         self.setup_loaded = False
         self.total_samples = total_samples
+        self.train_fraction = train_fraction
 
         if mode == "raw":
             self.total_samples *= 2
@@ -87,27 +89,29 @@ class HologramDataModule(LightningDataModule):
         raw_shards = sorted(glob.glob(str(self.data_dir / "*.tar")))
         random.Random(42).shuffle(raw_shards)
         if not raw_shards:
-            raise FileNotFoundError(f"Keine .tar Dateien in {self.data_dir} gefunden.")
+            raise FileNotFoundError(f"No tar files in {self.data_dir} found.")
         shards = [f"file:{Path(p).as_posix()}" for p in raw_shards]
 
         num_shards = len(shards)
         # generate split on archive level
         train_end = int(0.8 * num_shards)
         val_end = int(0.9 * num_shards)
-
-        self.train_urls = shards[:train_end]
+        full_train_urls = shards[:train_end]
+        
+        # option to reduce labeled train size
+        num_train_shards = max(1, int(len(full_train_urls) * self.train_fraction)) if self.train_fraction > 0 else 0
+        self.train_urls = full_train_urls[:num_train_shards]
         self.val_urls = shards[train_end:val_end]
         self.test_urls = shards[val_end:]
 
-        total_urls = len(self.train_urls) + len(self.val_urls) + len(self.test_urls)
-        if total_urls > 0:
-            train_ratio = len(self.train_urls) / total_urls
-            self.train_samples = int(self.total_samples * train_ratio)
+        if num_shards > 0:
+            self.train_samples = int(self.total_samples * (len(self.train_urls) / num_shards))
         else:
             self.train_samples = 0
 
         logger.info(
-            f"Shards distributed: Train={len(self.train_urls)}, Val={len(self.val_urls)}, Test={len(self.test_urls)}"
+            f"Shards distributed: Train={len(self.train_urls)} (out of originally {len(full_train_urls)}), "
+            f"Val={len(self.val_urls)}, Test={len(self.test_urls)}"
         )
         self.setup_loaded = True
 
@@ -141,6 +145,8 @@ class HologramDataModule(LightningDataModule):
         return dataset
 
     def train_dataloader(self):
+        if not self.train_urls:
+            return None
         dataset = self._create_dataset(self.train_urls, is_train=True)
         return torch.utils.data.DataLoader(
             dataset,
