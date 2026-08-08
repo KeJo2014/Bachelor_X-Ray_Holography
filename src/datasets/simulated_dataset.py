@@ -97,15 +97,21 @@ class HologramDataModule(LightningDataModule):
         train_end = int(0.8 * num_shards)
         val_end = int(0.9 * num_shards)
         full_train_urls = shards[:train_end]
-        
+
         # option to reduce labeled train size
-        num_train_shards = max(1, int(len(full_train_urls) * self.train_fraction)) if self.train_fraction > 0 else 0
+        num_train_shards = (
+            max(1, int(len(full_train_urls) * self.train_fraction))
+            if self.train_fraction > 0
+            else 0
+        )
         self.train_urls = full_train_urls[:num_train_shards]
         self.val_urls = shards[train_end:val_end]
         self.test_urls = shards[val_end:]
 
         if num_shards > 0:
-            self.train_samples = int(self.total_samples * (len(self.train_urls) / num_shards))
+            self.train_samples = int(
+                self.total_samples * (len(self.train_urls) / num_shards)
+            )
         else:
             self.train_samples = 0
 

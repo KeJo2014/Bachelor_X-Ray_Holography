@@ -202,6 +202,37 @@ class BaselineExperiment(AbstractExperiment):
         logger.info("Starting test evaluation...")
         trainer.test(self.model, datamodule=self.dataloader, ckpt_path="best")
 
+    def evaluate_only(self):
+        mlflow_logger = MLFlowLogger(
+            tracking_uri=self.config.mlflow_uri,
+            experiment_name="X-Ray Holography",
+            run_name=f"{self.name}_eval",
+        )
+        mlflow_callback = MLflowLoggingCallback(
+            config=self.config, experiment_name="X-Ray Holography"
+        )
+
+        vis_callback = VisualizationCallback(
+            config=self.cfg, log_every_n_epochs=self.cfg.get("log_every_n_epochs", -1)
+        )
+
+        trainer = pl.Trainer(
+            accelerator="auto",
+            devices=1,
+            logger=mlflow_logger,
+            callbacks=[vis_callback, mlflow_callback],
+            precision="16-mixed",
+        )
+
+        ckpt_path = self.cfg.get("checkpoint_path")
+        if not ckpt_path:
+            raise ValueError(
+                "For evaluation only purposes 'checkpoint_path' in conf must be set."
+            )
+
+        logger.info(f"Starting test evaluation with checkpoint: {ckpt_path}")
+        trainer.test(self.model, datamodule=self.dataloader, ckpt_path=ckpt_path)
+
 
 @hydra.main(version_base=None, config_path="../../conf/", config_name="baseline_config")
 def main(cfg: DictConfig):
@@ -212,12 +243,16 @@ def main(cfg: DictConfig):
     datamodule.setup()
 
     experiment = cfg.models.baselines
-    downstream_experiment = BaselineExperiment(
+    baseline_experiment = BaselineExperiment(
         dataloader=datamodule,
         experiment_config=experiment,
         config=cfg,
     )
-    downstream_experiment.train_and_evaluate()
+
+    if not bool(cfg.get("eval_only_mode", False)):
+        baseline_experiment.train_and_evaluate()
+    else:
+        baseline_experiment.evaluate_only()
 
 
 if __name__ == "__main__":
