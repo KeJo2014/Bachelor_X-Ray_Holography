@@ -7,6 +7,7 @@ import torch
 import matplotlib
 import matplotlib.pyplot as plt
 import heapq
+import collections
 
 from experiments.abstract_experiment import (
     AbstractExperiment,
@@ -28,16 +29,20 @@ logger = logging.getLogger(__name__)
 
 
 class VisualizationCallback(Callback):
-    """Callback to visualize and log first batch and worst predictions during testing."""
+    """Callback to visualize and log predictions with class examples during testing."""
 
     def __init__(self, config, log_every_n_epochs: int = -1):
         super().__init__()
         self.log_every_n_epochs = log_every_n_epochs
         self.cfg = config
 
-        # priority queue for bad predictions
+        # queue for bad predictions
         self.worst_predictions = []
         self.counter = 0
+
+        # dictionaries to store correct and wrong classifications
+        self.class_correct_preds = collections.defaultdict(list)
+        self.class_incorrect_preds = collections.defaultdict(list)
 
     @rank_zero_only
     def _log_visualization(
@@ -70,33 +75,53 @@ class VisualizationCallback(Callback):
                 trainer, pl_module, batch, "visualizations/test_reconstruction.png"
             )
 
-        if self.cfg.visualization_type != "segmentation":
-            return
+        if self.cfg.visualization_type == "segmentation":
+            batch_x, _, true_mask = batch
+            predicted_mask = outputs["preds"]
 
-        batch_x, _, true_mask = batch
-        predicted_mask = outputs["preds"]
+            batch_size = batch_x.size(0)
+            target_mask = true_mask.long().to(pl_module.device)
 
-        batch_size = batch_x.size(0)
-        target_mask = true_mask.long().to(pl_module.device)
+            for b in range(batch_size):
+                f2 = binary_fbeta_score(
+                    predicted_mask[b].flatten(), target_mask[b].flatten(), beta=2.0
+                ).item()
 
-        for b in range(batch_size):
-            f2 = binary_fbeta_score(
-                predicted_mask[b].flatten(), target_mask[b].flatten(), beta=2.0
-            ).item()
+                item = (
+                    -f2,
+                    self.counter,
+                    batch_x[b, 0].cpu(),
+                    true_mask[b, 0].cpu(),
+                    predicted_mask[b, 0].cpu(),
+                )
+                self.counter += 1
 
-            item = (
-                -f2,
-                self.counter,
-                batch_x[b, 0].cpu(),
-                true_mask[b, 0].cpu(),
-                predicted_mask[b, 0].cpu(),
-            )
-            self.counter += 1
+                if len(self.worst_predictions) < 20:
+                    heapq.heappush(self.worst_predictions, item)
+                else:
+                    heapq.heappushpop(self.worst_predictions, item)
 
-            if len(self.worst_predictions) < 20:
-                heapq.heappush(self.worst_predictions, item)
-            else:
-                heapq.heappushpop(self.worst_predictions, item)
+        elif self.cfg.visualization_type == "multi_class_classification":
+            batch_x, targets = batch[0], batch[1]
+            with torch.no_grad():
+                logits = pl_module(batch_x.to(pl_module.device))
+                preds = torch.argmax(logits, dim=1)
+
+            targets = targets.cpu()
+            preds = preds.cpu()
+            batch_x = batch_x.cpu()
+
+            for b in range(batch_x.size(0)):
+                true_label = targets[b].item()
+                pred_label = preds[b].item()
+                img = batch_x[b]
+
+                if true_label == pred_label:
+                    if len(self.class_correct_preds[true_label]) < 5:
+                        self.class_correct_preds[true_label].append((img, pred_label))
+                else:
+                    if len(self.class_incorrect_preds[true_label]) < 5:
+                        self.class_incorrect_preds[true_label].append((img, pred_label))
 
     def on_validation_batch_end(
         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0
@@ -114,25 +139,36 @@ class VisualizationCallback(Callback):
         if self.cfg.visualization_type == "multi_class_classification":
             matrix = pl_module.test_conf_mat.compute()
 
-            # create class_name list
             label_map = trainer.datamodule.label_map
             inv_map = {v: k for k, v in label_map.items()}
             class_names = [inv_map[i] for i in range(pl_module.hparams.num_classes)]
 
+            # plot confusion matrix
             fig = plot_multiclass_confusion_matrix(
                 matrix=matrix,
                 class_names=class_names,
             )
 
-            for logger in trainer.loggers:
-                if isinstance(logger, MLFlowLogger):
-                    logger.experiment.log_figure(
-                        logger.run_id,
+            for logger_instance in trainer.loggers:
+                if isinstance(logger_instance, MLFlowLogger):
+                    logger_instance.experiment.log_figure(
+                        logger_instance.run_id,
                         fig,
                         "visualizations/multilabel_confusion_matrix.png",
                     )
-            plt.close(fig)
+                    plt.close(fig)
+
+                    self._log_class_examples(
+                        logger_instance, class_names, is_correct=True
+                    )
+                    self._log_class_examples(
+                        logger_instance, class_names, is_correct=False
+                    )
+
             pl_module.test_conf_mat.reset()
+            self.class_correct_preds.clear()
+            self.class_incorrect_preds.clear()
+
         elif self.cfg.visualization_type == "segmentation":
             if not self.worst_predictions:
                 return
@@ -161,6 +197,67 @@ class VisualizationCallback(Callback):
                 plt.close(fig)
             self.worst_predictions.clear()
             self.counter = 0
+
+    def _log_class_examples(self, logger_instance, class_names, is_correct: bool):
+        """helper function for logging positive and negative classification examples"""
+        examples_dict = (
+            self.class_correct_preds if is_correct else self.class_incorrect_preds
+        )
+        folder_prefix = "correct" if is_correct else "incorrect"
+        color = "green" if is_correct else "red"
+
+        for true_idx, items in examples_dict.items():
+            true_class_name = (
+                class_names[true_idx] if true_idx < len(class_names) else str(true_idx)
+            )
+
+            for i, (img_tensor, pred_idx) in enumerate(items):
+                pred_class_name = (
+                    class_names[pred_idx]
+                    if pred_idx < len(class_names)
+                    else str(pred_idx)
+                )
+                C = img_tensor.shape[0]
+
+                if C == 1:
+                    fig, ax = plt.subplots(figsize=(4, 4))
+                    ax.imshow(img_tensor[0].numpy(), cmap="gray")
+                    ax.axis("off")
+                elif C == 3:
+                    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+                    cl_img = img_tensor[0].numpy()
+                    cr_img = img_tensor[1].numpy()
+                    diff_img = img_tensor[2].numpy()
+
+                    # CL
+                    axes[0].imshow(cl_img, cmap="viridis", vmin=0, vmax=1)
+                    axes[0].set_title("CL")
+                    axes[0].axis("off")
+
+                    # CR
+                    axes[1].imshow(cr_img, cmap="viridis", vmin=0, vmax=1)
+                    axes[1].set_title("CR")
+                    axes[1].axis("off")
+
+                    # diff
+                    max_diff = max(abs(diff_img.min()), abs(diff_img.max()))
+                    axes[2].imshow(
+                        diff_img, cmap="coolwarm", vmin=-max_diff, vmax=max_diff
+                    )
+                    axes[2].set_title("Diff Holo")
+                    axes[2].axis("off")
+                else:
+                    continue
+                title = f"True: {true_class_name} | Pred: {pred_class_name}"
+                fig.suptitle(title, color=color, fontsize=14, fontweight="bold")
+                plt.tight_layout()
+                filename = f"visualizations/classification/{true_class_name}/{folder_prefix}_{i}_pred_{pred_class_name}.png"
+
+                logger_instance.experiment.log_figure(
+                    logger_instance.run_id, fig, filename
+                )
+                plt.close(fig)
 
 
 class DownstreamExperiment(AbstractExperiment):
