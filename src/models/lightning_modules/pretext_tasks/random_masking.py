@@ -10,6 +10,7 @@ class RandomMaskingStrategy(PretextTaskAction):
         patch_size: int = 16,
         mask_ratio: float = 0.75,
         centrosymmetric: bool = True,
+        custom_loss: bool = True,
     ):
         """
         Handles the masking strategy, including mask generation, unpatchifying, and loss computation.
@@ -26,6 +27,7 @@ class RandomMaskingStrategy(PretextTaskAction):
         self.loss_function = RadiallyWeightedLoss(loss_type="l2")
         self.grid_size = img_size // patch_size
         self.centrosymmetric = centrosymmetric
+        self.custom_loss = custom_loss
 
     def generate_mask(
         self, batch_size: int, num_patches: int, device: torch.device
@@ -104,12 +106,16 @@ class RandomMaskingStrategy(PretextTaskAction):
                 mse_loss_fn(pred_img[:, 1:2], target_img[:, 1:2]) * loss_mask
             ).sum() / (loss_mask.sum() + 1e-8)
 
-            loss_diff = self.loss_function(
-                pred_img[:, 2:3], target_img[:, 2:3], mask=loss_mask
-            )
-
-            total_loss = loss_cl + loss_cr + (5.0 * loss_diff)
+            if self.custom_loss:
+                loss_diff = self.loss_function(
+                    pred_img[:, 2:3], target_img[:, 2:3], mask=loss_mask
+                )
+                total_loss = loss_cl + loss_cr + (5.0 * loss_diff)
+            else:
+                loss_diff = (
+                    mse_loss_fn(pred_img[:, 2:3], target_img[:, 2:3]) * loss_mask
+                ).sum() / (loss_mask.sum() + 1e-8)
+                total_loss = loss_cl + loss_cr + loss_diff
             return total_loss
-
         else:
             return self.loss_function(pred_img, target_img, mask=loss_mask)
