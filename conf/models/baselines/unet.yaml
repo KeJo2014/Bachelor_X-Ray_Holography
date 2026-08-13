@@ -8,7 +8,7 @@ model:
   lr: 0.0001
   weight_decay: 0.01
   warmup_ratio: 0.1
-  encoder_name: "resnet34" #tu-convnext_base.dinov3_lvd1689m
+  encoder_name: "resnet18" #tu-convnext_base.dinov3_lvd1689m
   channels: 1
 
 trainer:

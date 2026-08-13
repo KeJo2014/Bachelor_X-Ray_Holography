@@ -1,32 +1,6 @@
 defaults:
   - models/baselines: unet
-  - override hydra/sweeper: optuna
-  - override hydra/launcher: submitit_slurm
   - _self_
-
-hydra:
-  launcher:
-    partition: main
-    timeout_min: 1440
-    cpus_per_task: 10
-    gpus_per_node: 1
-    tasks_per_node: 1
-    mem_gb: 64
-    nodes: 1
-    name: ${hydra.job.name}
-
-  sweeper:
-    sampler:
-      _target_: optuna.samplers.TPESampler
-      seed: 42
-    direction: minimize
-    study_name: Baseline Hyperparameter Optimization
-    storage: "sqlite:///optuna.db"
-    n_trials: 20
-    n_jobs: 1
-    params:
-      models.baselines.model.lr: interval(1e-5, 5e-4)
-      models.baselines.model.weight_decay: interval(1e-4, 1e-1)
 
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
@@ -35,6 +9,6 @@ batch_size: 1
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
-  data_dir: "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/simulation_sweep_1.h5"
-  mode: raw
-  center_holograms: True
+  data_dir: "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
+  mode: "rgb"
+  total_samples: 5000

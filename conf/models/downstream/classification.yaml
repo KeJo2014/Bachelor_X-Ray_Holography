@@ -4,11 +4,13 @@ visualization_type: "multi_class_classification"
 
 backbone:
   module_class: "models.lightning_modules.backbones.mae.LitMAE"
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/2026-07-07_18-10-40/backbone-02-val_loss=0.0028.ckpt"
+  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/2026-08-12_15-39-07/backbone-00-val_loss=0.0018.ckpt"
+  use_pretrained_dino: false
+  channels: 3
 
 task:
   _target_: models.lightning_modules.tasks.classification_task.LitClassificationTask
-  num_classes: 2
+  num_classes: 3
   freeze_encoder: false
   lr: 1e-4
   encoder_lr: 1e-5
@@ -19,9 +21,9 @@ task:
     _target_: models.heads.classification_head.ViTMultiLabelClassificationHead
     embed_dim: 768
     hidden_dim: 256
-    num_classes: 2
+    num_classes: 3
 
 trainer:
-  max_epochs: 3
+  max_epochs: 1
   monitor_metric: "val/f1_macro"
   monitor_mode: "max"
