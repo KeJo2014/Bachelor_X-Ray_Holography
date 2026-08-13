@@ -5,7 +5,7 @@ import logging
 import os
 import glob
 
-from abc import ABC, abstractmethod
+from abc import ABC
 from omegaconf import DictConfig, OmegaConf
 from models.lightning_modules.pretext_tasks import PRETEXT_STRATEGIES
 from models.loss_functions import LOSS_FUNCTIONS
@@ -85,21 +85,6 @@ class AbstractExperiment(ABC):
         logger.info(f"Loading newst model checkpoint: {latest_checkpoint}")
 
         self.model = model_type.load_from_checkpoint(latest_checkpoint)
-
-    # @abstractmethod
-    # def run_experiment(
-    #     self, dataset, models, dataset_name: str, num_data_points: int
-    # ) -> None:
-    #     """
-    #     This method should implement the running of the experiment.
-
-    #     :param dataset: The dataset to run the experiment on.
-    #     :param models: The models to use for the experiment.
-    #     :param num_data_points: The number of data points to run the experiment on. If not specified uses all datapoints.
-    #     :param dataset_name: The name of the dataset, must be a string that is directly accessible
-    #     :return: None
-    #     """
-    #     pass
 
 
 class MLflowLoggingCallback(Callback):
