@@ -1,3 +1,7 @@
+"""
+External helper script for visualizing the HDF5 dataset files and its parameters.
+"""
+
 import os
 import glob
 import logging
@@ -127,7 +131,6 @@ def extract_or_load_data():
     logging.info(f"Saving metrics & statistics...")
     df.to_csv(CSV_CACHE_DESTINATION, index=False)
     df.describe(include="all").to_csv(STATS_DESTINATION)
-
     return df
 
 

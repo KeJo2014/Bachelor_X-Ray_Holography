@@ -22,6 +22,10 @@ LABEL_MAP = {
 
 
 def decode_stream(data_iterator, mode="rgb", label_map=None):
+    """
+    Decodes a webdataset stream and yields tensors, labels, and masks.
+    """
+
     for sample in data_iterator:
         meta = json.loads(sample["json"])
 
@@ -83,6 +87,10 @@ class HologramDataModule(LightningDataModule):
             self.total_samples *= 2
 
     def setup(self, stage=None):
+        """
+        Handles the setup of the dataset, including splitting into train, validation, and test sets.
+        """
+
         if self.setup_loaded:
             return
 
@@ -122,6 +130,10 @@ class HologramDataModule(LightningDataModule):
         self.setup_loaded = True
 
     def _create_dataset(self, urls, is_train=False):
+        """
+        Creates a WebDataset dataset from the provided URLs.
+        """
+
         if not urls:
             raise ValueError(f"No urls received!")
 
@@ -186,6 +198,10 @@ class HologramDataModule(LightningDataModule):
         )
 
     def on_after_batch_transfer(self, batch, dataloader_idx):
+        """
+        Post-processing after batch transfer to device.
+        """
+
         raw_tensor, labels, masks = batch
 
         def scale_gpu(holo, is_diff=False):

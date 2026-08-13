@@ -1,3 +1,7 @@
+"""
+This file handles the offline preprocessing step of reading HDF5 files, apply preprocessing steps and save them in webdataset shards.
+"""
+
 import argparse
 import glob
 import io
@@ -16,6 +20,8 @@ from tqdm import tqdm
 
 
 class ShardWriter:
+    """Handler for writing result to webdataset shards"""
+
     def __init__(self, pattern, maxcount=100000, maxsize=3e9):
         self.pattern = pattern
         self.maxcount = maxcount
@@ -150,13 +156,13 @@ def process_dataset(
     maxsize: float = 3e9,
 ):
     data_dir = Path(data_dir)
-    reduced_dir = data_dir / "reduced2"
+    reduced_dir = data_dir / "reduced"
     reduced_dir.mkdir(exist_ok=True)
     shard_pattern = str(reduced_dir / f"shard-w{worker_id:04d}-%06d.tar")
     all_h5_files = sorted(glob.glob(str(data_dir / "*.h5")))
 
     if not all_h5_files:
-        print(f"Worker {worker_id}: Keine .h5 Dateien in {data_dir} gefunden.")
+        print(f"Worker {worker_id}: No .h5 files in {data_dir} found.")
         return
 
     my_files = all_h5_files[worker_id::num_workers]

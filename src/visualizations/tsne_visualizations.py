@@ -4,6 +4,8 @@ import plotly.express as px
 
 
 def create_2d_tsne_plot(reduced_embeddings_2d, str_labels):
+    """Create a static 2D t-SNE plot using Matplotlib."""
+
     fig_static, ax_static = plt.subplots(figsize=(10, 8))
     unique_labels = list(set(str_labels))
     cmap = plt.get_cmap("tab10", len(unique_labels))
@@ -24,6 +26,7 @@ def create_2d_tsne_plot(reduced_embeddings_2d, str_labels):
 
 
 def create_3d_tsne_visualization(reduced_embeddings_3d, str_labels):
+    """Create an interactive 3D t-SNE plot using Plotly."""
     df_tsne = pd.DataFrame(
         {
             "tsne_1": reduced_embeddings_3d[:, 0],

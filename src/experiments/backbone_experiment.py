@@ -106,7 +106,7 @@ class RandomSimMIMExperiment(AbstractExperiment):
             devices="auto",
             logger=self.mlflow_logger,
             callbacks=[checkpoint_callback, vis_callback, mlflow_callback],
-            precision="16-mixed",  # use half-precision
+            precision="16-mixed",
             accumulate_grad_batches=2,
         )
         trainer.fit(model, datamodule=self.dataloader)

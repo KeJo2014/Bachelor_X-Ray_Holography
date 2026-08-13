@@ -1,4 +1,5 @@
 import os
+import timm
 import pytorch_lightning as pl
 import logging
 import hydra
@@ -95,7 +96,6 @@ class VisualizationCallback(Callback):
                     predicted_mask[b, 0].cpu(),
                 )
                 self.counter += 1
-
                 if len(self.worst_predictions) < 20:
                     heapq.heappush(self.worst_predictions, item)
                 else:
@@ -284,9 +284,8 @@ class DownstreamExperiment(AbstractExperiment):
         return getattr(module, class_name)
 
     def _build_model(self) -> pl.LightningModule:
+        """Helper function to build the downstream model with pretrained encoder and new head"""
         if self.cfg.backbone.get("use_pretrained_dino", True):
-            import timm
-
             logger.info("Loading native dinov3 model with frozen weights")
             encoder = timm.create_model(
                 "vit_base_patch16_dinov3.lvd1689m",

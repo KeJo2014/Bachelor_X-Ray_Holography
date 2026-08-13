@@ -53,7 +53,6 @@ class LitMAE(pl.LightningModule):
         self.decoder_pos_embed = nn.Parameter(
             torch.zeros(1, self.num_patches + 1, decoder_embed_dim)
         )
-
         self.decoder_blocks = nn.ModuleList(
             [
                 timm.models.vision_transformer.Block(
@@ -66,7 +65,6 @@ class LitMAE(pl.LightningModule):
                 for _ in range(decoder_depth)
             ]
         )
-
         self.decoder_norm = nn.LayerNorm(decoder_embed_dim)
 
         # final projection to pixel values
@@ -183,7 +181,6 @@ class LitMAE(pl.LightningModule):
             size=(self.hparams.img_size, self.hparams.img_size),
             mode="nearest",
         )
-
         return pred, mask_1d, mask_img, x
 
     def training_step(

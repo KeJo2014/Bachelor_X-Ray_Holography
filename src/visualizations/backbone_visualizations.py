@@ -1,12 +1,13 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
 import torch
 import numpy as np
 
 from pytorch_lightning import LightningModule
-import seaborn as sns
 
 
 def _apply_inverse_fourier_transform(input_image: torch.Tensor) -> torch.Tensor:
+    """Helper function to apply inverse Fourier transform to a batch of images."""
     recon_shifted = torch.fft.ifftshift(input_image, dim=(-2, -1))
     real_space_reconstruction = torch.fft.ifft2(
         recon_shifted, dim=(-2, -1), norm="ortho"
@@ -176,7 +177,6 @@ def visualize_backbone_results(
 def plot_multiclass_confusion_matrix(matrix: torch.Tensor, class_names: list = None):
     """
     Plot confusion matrix for a multi-class classification problem.
-    :param matrix: Tensor from TorchMetrics
     """
     matrix_np = matrix.cpu().numpy()
     fig, ax = plt.subplots(figsize=(8, 6))

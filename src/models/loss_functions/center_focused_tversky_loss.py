@@ -15,7 +15,7 @@ class CenterFocusedTverskyLoss(nn.Module):
         beta: False negative weight
         sigma: parameters that adjust the importance decay from center to edges
         """
-        super().__init__()  # TODO: Rationalize Parameter Selection
+        super().__init__()
         self.alpha = alpha
         self.beta = beta
         self.sigma = sigma

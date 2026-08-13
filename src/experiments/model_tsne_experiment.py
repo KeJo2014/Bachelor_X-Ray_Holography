@@ -52,6 +52,7 @@ class FeatureEvalExperiment(AbstractExperiment):
         return getattr(module, class_name)
 
     def _extracted_loaded_encoder(self) -> pl.LightningModule:
+        """Helper function to load the pretrained encoder from the checkpoint or native DINOv3 model"""
         if self.cfg.get("use_pretrained_dino", True):
             import timm
 

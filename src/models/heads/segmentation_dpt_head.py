@@ -11,7 +11,7 @@ class DPTSegmentationHead(nn.Module):
         self.C = channels
 
         self.smp_model = smp.DPT(
-            encoder_name=encoder_name,  # needs to be fitting the base architecture
+            encoder_name=encoder_name,
             encoder_weights=None,
             in_channels=self.C,
             classes=num_classes,

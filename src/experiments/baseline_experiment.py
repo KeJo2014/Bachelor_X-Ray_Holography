@@ -10,7 +10,6 @@ from pytorch_lightning.loggers import MLFlowLogger
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from omegaconf import DictConfig
 from hydra.utils import instantiate
-
 from experiments.abstract_experiment import (
     AbstractExperiment,
     MLflowLoggingCallback,
