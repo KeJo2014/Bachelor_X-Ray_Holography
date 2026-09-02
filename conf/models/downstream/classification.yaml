@@ -1,10 +1,11 @@
 name: "Multi-Label Classification"
-checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/classification/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
+checkpoint_dir: "PATH_TO_YOUR_CHECKPOINT_DIRECTORY/mae/classification/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 visualization_type: "multi_class_classification"
+checkpoint_path: "PATH_TO_TRAINED_SEGMENTATION_MODEL" # for evaluation only mode
 
 backbone:
   module_class: "models.lightning_modules.backbones.mae.LitMAE"
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/2026-08-12_15-39-07/backbone-00-val_loss=0.0018.ckpt"
+  checkpoint_path: "PATH_TO_YOUR_TRAINED_BACKBONE_MODEL"
   use_pretrained_dino: false
   channels: 3
 
@@ -24,6 +25,6 @@ task:
     num_classes: 3
 
 trainer:
-  max_epochs: 1
+  max_epochs: 200
   monitor_metric: "val/f1_macro"
   monitor_mode: "max"

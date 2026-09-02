@@ -1,5 +1,5 @@
 model:
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/2026-08-12_15-39-07/backbone-00-val_loss=0.0018.ckpt"
+  checkpoint_path: "PATH_TO_YOUR_TRAINED_BACKBONE_MODEL"
   encoder: 
     _target_: models.lightning_modules.backbones.mae.LitMAE
     pretext_strategy: None
@@ -11,10 +11,10 @@ model:
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
-batch_size: 4
+batch_size: 512
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
-  data_dir: "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
+  data_dir: "PATH_TO_YOUR_DATASET_SHARDS_DIRECTORY"
   mode: "rgb"
-  total_samples: 5000
+  total_samples: 250000

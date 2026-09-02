@@ -1,14 +1,15 @@
 defaults:
-  - models/baselines: unet
+  - models/baselines: unet # or resnet_18
   - _self_
 
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
-batch_size: 1
+batch_size: 512
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
-  data_dir: "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
-  mode: "rgb"
-  total_samples: 5000
+  data_dir: "PATH_TO_YOUR_DATASET_SHARDS_DIRECTORY"
+  mode: "raw" # or "diff" for resnet_18 baseline
+  total_samples: 250000
+  train_fraction: 1.0

@@ -5,14 +5,13 @@ defaults:
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
-eval_only_mode: true
+eval_only_mode: false
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
-  data_dir: "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
+  data_dir: "PATH_TO_YOUR_DATASET_SHARDS_DIRECTORY"
   mode: "rgb"
-  total_samples: 5000
-  train_fraction: 1.0
+  total_samples: 250000
 
 experiments:
-  batch_size: 2
+  batch_size: 512

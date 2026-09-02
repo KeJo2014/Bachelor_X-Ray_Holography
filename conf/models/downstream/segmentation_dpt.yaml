@@ -1,18 +1,18 @@
 name: "Segmentation"
-checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/segmentation/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
+checkpoint_dir: "PATH_TO_YOUR_CHECKPOINT_DIRECTORY/mae/segmentation/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 visualization_type: "segmentation"
-log_every_n_epochs: 2
-checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/segmentation/2026-07-12_14-04-13/task-00-val_F2_Score=0.1116.ckpt"
+log_every_n_epochs: 20
+checkpoint_path: "PATH_TO_TRAINED_SEGMENTATION_MODEL" # for evaluation only mode
 
 backbone:
   module_class: "models.lightning_modules.backbones.mae.LitMAE"
-  checkpoint_path: "C:/Users/kelle/Documents/storage/xray/checkpoints/mae/2026-07-12_13-45-56/backbone-00-val_loss=0.0121.ckpt"
+  checkpoint_path: "PATH_TO_YOUR_TRAINED_BACKBONE_MODEL"
   use_pretrained_dino: false
   channels: 3
 
 task:
   _target_: models.lightning_modules.tasks.segmentation_task.LitSegmentationTask
-  selected_loss: "dice" # or tversky
+  selected_loss: "dice"
   freeze_encoder: false
   lr: 1e-4
   encoder_lr: 1e-5
@@ -21,9 +21,9 @@ task:
   
   head:
     _target_: models.heads.segmentation_dpt_head.DPTSegmentationHead
-    encoder_name: "tu-vit_base_patch16_224" # or "tu-vit_base_patch16_dinov3.lvd1689m" for Dinov3
+    encoder_name: "tu-vit_base_patch16_224"
 
 trainer:
-  max_epochs: 60
+  max_epochs: 200
   monitor_metric: "val/F2_Score"
   monitor_mode: "max"

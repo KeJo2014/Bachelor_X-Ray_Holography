@@ -1,15 +1,16 @@
 defaults:
-  - models/downstream: classification
+  - models/downstream: classification  # or segmentation_dpt
   - _self_
 
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
-batch_size: 2
+batch_size: 512
 eval_only_mode: false
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
-  data_dir: "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
+  data_dir: "PATH_TO_YOUR_DATASET_SHARDS_DIRECTORY"
   mode: "rgb"
-  total_samples: 5000
+  total_samples: 250000
+  train_fraction: 1.0
