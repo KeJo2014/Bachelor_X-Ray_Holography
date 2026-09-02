@@ -168,8 +168,7 @@ def main(cfg: DictConfig):
         if current_val_loss is not None:
             best_val_loss = min(best_val_loss, current_val_loss.item())
 
-        experiment.evaluate_model(ModelClass)
-
+    experiment.evaluate_model(ModelClass)
     return best_val_loss
 
 

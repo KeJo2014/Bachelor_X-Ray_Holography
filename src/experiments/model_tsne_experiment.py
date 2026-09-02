@@ -23,6 +23,8 @@ from hydra.utils import instantiate
 from visualizations.tsne_visualizations import (
     create_2d_tsne_plot,
     create_3d_tsne_visualization,
+    create_2d_contour_plot,
+    create_orthogonal_projections,
 )
 
 matplotlib.use("Agg")
@@ -152,9 +154,19 @@ class FeatureEvalExperiment(AbstractExperiment):
             mlflow_logger.experiment.log_figure(
                 mlflow_logger.run_id,
                 fig_static,
-                "visualizations/tsne_embeddings_2d.png",
+                "visualizations/tsne_embeddings_2d.pdf",
             )
         plt.close(fig_static)
+
+        logger.info("Computing 2d t-SNE contour plots plot...")
+        fig = create_2d_contour_plot(reduced_embeddings_2d, str_labels)
+        if mlflow_logger.run_id:
+            mlflow_logger.experiment.log_figure(
+                mlflow_logger.run_id,
+                fig,
+                "visualizations/tsne_contour_2d.pdf",
+            )
+        plt.close(fig)
 
         logger.info("Computing 3D t-SNE embeddings for interactive plot...")
         tsne_3d = TSNE(n_components=3, random_state=42)
@@ -170,6 +182,16 @@ class FeatureEvalExperiment(AbstractExperiment):
                 mlflow_logger.experiment.log_artifact(
                     mlflow_logger.run_id, html_path, artifact_path="visualizations"
                 )
+
+        logger.info("Computing 3 orthogonal 2D projections from 3D t-SNE embeddings...")
+        fig = create_orthogonal_projections(reduced_embeddings_3d, str_labels)
+        if mlflow_logger.run_id:
+            mlflow_logger.experiment.log_figure(
+                mlflow_logger.run_id,
+                fig,
+                "visualizations/tsne_3d_perspectives.pdf",
+            )
+        plt.close(fig)
 
         logger.info(f"t-SNE visualizations logged to MLFlow.")
 

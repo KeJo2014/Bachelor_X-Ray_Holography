@@ -5,7 +5,7 @@ defaults:
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
-eval_only_mode: false
+eval_only_mode: true
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
