@@ -234,13 +234,14 @@ class HologramDataModule(LightningDataModule):
 
         return tensor, labels, masks
 
+
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
     import numpy as np
 
     data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
-    current_mode = "raw"  
+    current_mode = "raw"
     current_noise = False
 
     data_module = HologramDataModule(
@@ -291,13 +292,17 @@ if __name__ == "__main__":
             if self.batch_idx >= self.batch_size:
                 try:
                     raw_batch = next(self.data_iter)
-                    self.current_batch = data_module.on_after_batch_transfer(raw_batch, 0)
+                    self.current_batch = data_module.on_after_batch_transfer(
+                        raw_batch, 0
+                    )
                     self.batch_idx = 0
                     self.batch_size = self.current_batch[0].shape[0]
                 except StopIteration:
                     self.data_iter = iter(self.dataloader)
                     raw_batch = next(self.data_iter)
-                    self.current_batch = data_module.on_after_batch_transfer(raw_batch, 0)
+                    self.current_batch = data_module.on_after_batch_transfer(
+                        raw_batch, 0
+                    )
                     self.batch_idx = 0
             self.update_plot()
 
@@ -309,13 +314,13 @@ if __name__ == "__main__":
 
             # Lade nur das CL-Hologramm[cite: 1]
             raw_data = holo[idx][0].cpu().numpy()
-            
+
             # Skaliere das CL-Hologramm für den Plot[cite: 1]
             h_single = cpu_scale_for_plot(raw_data, is_diff=False)
 
             # Wende exakt einmal IFFT auf das rohe CL-Hologramm an
             ifft_data = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(raw_data)))
-            
+
             # Nimm die Magnitude (Betrag) und skaliere sie mit der gleichen Funktion auf 0 bis 1
             ifft_mag_scaled = cpu_scale_for_plot(np.abs(ifft_data), is_diff=False)
 
@@ -326,7 +331,11 @@ if __name__ == "__main__":
             img_ifft.set_data(ifft_mag_scaled)
             img_ifft.set_clim(vmin=0, vmax=1)
 
-            fig.suptitle(f"CL Raw Hologram & 1x IFFT | Class: {class_name}", fontsize=14, fontweight="bold")
+            fig.suptitle(
+                f"CL Raw Hologram & 1x IFFT | Class: {class_name}",
+                fontsize=14,
+                fontweight="bold",
+            )
             fig.canvas.draw_idle()
 
     viewer = ViewerState(train_loader, inv_label_map, data_module.mode)
@@ -354,8 +363,12 @@ if __name__ == "__main__":
     ax2.set_title("IFFT (Magnitude)")
     fig.colorbar(img_ifft, ax=ax2, fraction=0.046, pad=0.04)
 
-    fig.suptitle(f"CL Raw Hologram & 1x IFFT | Class: {init_class}", fontsize=14, fontweight="bold")
-    
+    fig.suptitle(
+        f"CL Raw Hologram & 1x IFFT | Class: {init_class}",
+        fontsize=14,
+        fontweight="bold",
+    )
+
     # "Next"-Button Logik[cite: 1]
     ax_button = plt.axes([0.45, 0.05, 0.1, 0.06])
     btn_next = Button(ax_button, "Next")
