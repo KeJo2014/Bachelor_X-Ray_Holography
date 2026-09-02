@@ -1,43 +1,16 @@
 defaults:
-  - models/downstream: classification
-  - override hydra/sweeper: optuna
-  - override hydra/launcher: submitit_slurm
+  - models/downstream: classification  # or segmentation_dpt
   - _self_
-
-hydra:
-  launcher:
-    partition: main
-    timeout_min: 1440
-    cpus_per_task: 10
-    gpus_per_node: 1
-    tasks_per_node: 1
-    mem_gb: 64
-    nodes: 1
-    name: ${hydra.job.name}
-
-  sweeper:
-    sampler:
-      _target_: optuna.samplers.TPESampler
-      seed: 42
-    direction: minimize
-    study_name: Downstream Hyperparameter Optimization
-    storage: "sqlite:///optuna.db"
-    n_trials: 20
-    n_jobs: 1
-    params:
-      models.downstream.task.lr: interval(1e-5, 5e-4)
-      models.downstream.task.weight_decay: interval(1e-4, 1e-1)
-      models.downstream.task.warmup_ratio: choice(0.05, 0.1, 0.2)
-
-
 
 loglevel: INFO
 mlflow_uri: "sqlite:///mlflow.db"
 mlflow_log_system_metrics: true
-batch_size: 2
+batch_size: 512
+eval_only_mode: false
 
 datamodule: 
   _target_: datasets.simulated_dataset.HologramDataModule
-  data_dir: "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/simulation_sweep_1.h5"
-  mode: rgb
-  center_holograms: True
+  data_dir: "PATH_TO_YOUR_DATASET_SHARDS_DIRECTORY"
+  mode: "rgb"
+  total_samples: 250000
+  train_fraction: 1.0

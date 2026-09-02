@@ -1,18 +1,18 @@
 name: "LitSimMIM Experiment"
-checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/random_mae/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
+checkpoint_dir: "PATH_TO_YOUR_CHECKPOINT_DIRECTORY/backbones/sim_mim/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 parameters:
   model:
     _target_: models.lightning_modules.backbones.sim_mim.LitSimMIM
     pretext_strategy:
-      _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
+      _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy  # or models.lightning_modules.pretext_tasks.random_real_space_masking.RandomMaskingRealSpaceStrategy
       img_size: 224
       patch_size: 16
-      mask_ratio: 0.5
+      mask_ratio: 0.75
     patch_size: 16
     embed_dim: 768
     mask_ratio: 0.75
     lr: 1.5e-4
     warmup_ratio: 0.1
     weight_decay: 0.05
-    channels: 1
-  num_epochs: 1
+    channels: 3
+  num_epochs: 800

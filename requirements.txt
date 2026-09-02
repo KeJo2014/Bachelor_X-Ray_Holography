@@ -10,9 +10,6 @@ lightly==1.5.23
 pytorch-lightning==2.6.1
 segmentation_models_pytorch==0.5.0
 mlflow==3.12.0
-optuna==4.8.0
-hydra-submitit-launcher==1.2.0
-hydra-optuna-sweeper==1.2.0
 
 # --- Data Science & Utils ---
 numpy==2.4.4
@@ -31,8 +28,3 @@ webdataset==1.0.2
 
 # --- Database & Tuning Dashboard ---
 SQLAlchemy==1.4.54
-optuna-dashboard==0.20.0
-
-# --- MANUAL INSTALL REQUIRED ---
-# due to a dependency conflict this must be manually installed without dependencies.
-# pip install hydra-optuna-sweeper==1.2.0 --no-deps

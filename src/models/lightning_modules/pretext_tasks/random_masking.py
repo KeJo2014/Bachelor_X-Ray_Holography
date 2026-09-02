@@ -1,4 +1,5 @@
 import torch
+
 from models.loss_functions import RadiallyWeightedLoss
 from models.lightning_modules.pretext_tasks.pretext_task_action import PretextTaskAction
 
@@ -14,11 +15,6 @@ class RandomMaskingStrategy(PretextTaskAction):
     ):
         """
         Handles the masking strategy, including mask generation, unpatchifying, and loss computation.
-
-        :param img_size: Spatial dimensions of the input image in pixels.
-        :param patch_size: Spatial dimensions of a single image patch.
-        :param mask_ratio: Fraction of patches to be masked during training.
-        :param centrosymmetric: If True, applies a centrosymmetric mask to prevent trivial shortcuts.
         """
 
         super().__init__(
@@ -106,7 +102,7 @@ class RandomMaskingStrategy(PretextTaskAction):
                 mse_loss_fn(pred_img[:, 1:2], target_img[:, 1:2]) * loss_mask
             ).sum() / (loss_mask.sum() + 1e-8)
 
-            if self.custom_loss:
+            if getattr(self, "custom_loss", True):
                 loss_diff = self.loss_function(
                     pred_img[:, 2:3], target_img[:, 2:3], mask=loss_mask
                 )

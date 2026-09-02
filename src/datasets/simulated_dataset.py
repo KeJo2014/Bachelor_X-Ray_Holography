@@ -22,6 +22,10 @@ LABEL_MAP = {
 
 
 def decode_stream(data_iterator, mode="rgb", label_map=None):
+    """
+    Decodes a webdataset stream and yields tensors, labels, and masks.
+    """
+
     for sample in data_iterator:
         meta = json.loads(sample["json"])
 
@@ -59,7 +63,7 @@ class HologramDataModule(LightningDataModule):
         total_samples: int,
         batch_size: int = 32,
         num_workers: int = min(
-            12,
+            0,
             max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1)) - 1),
         ),
         mode: str = "rgb",
@@ -83,6 +87,10 @@ class HologramDataModule(LightningDataModule):
             self.total_samples *= 2
 
     def setup(self, stage=None):
+        """
+        Handles the setup of the dataset, including splitting into train, validation, and test sets.
+        """
+
         if self.setup_loaded:
             return
 
@@ -122,6 +130,10 @@ class HologramDataModule(LightningDataModule):
         self.setup_loaded = True
 
     def _create_dataset(self, urls, is_train=False):
+        """
+        Creates a WebDataset dataset from the provided URLs.
+        """
+
         if not urls:
             raise ValueError(f"No urls received!")
 
@@ -186,6 +198,10 @@ class HologramDataModule(LightningDataModule):
         )
 
     def on_after_batch_transfer(self, batch, dataloader_idx):
+        """
+        Post-processing after batch transfer to device.
+        """
+
         raw_tensor, labels, masks = batch
 
         def scale_gpu(holo, is_diff=False):
@@ -218,13 +234,13 @@ class HologramDataModule(LightningDataModule):
 
         return tensor, labels, masks
 
-
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     from matplotlib.widgets import Button
+    import numpy as np
 
     data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
-    current_mode = "raw"
+    current_mode = "raw"  
     current_noise = False
 
     data_module = HologramDataModule(
@@ -255,7 +271,7 @@ if __name__ == "__main__":
                 holo = (holo - h_min) / (h_max - h_min)
             else:
                 holo = holo - h_min
-        return holo
+        return holo  # Bringt die Werte auf den Bereich 0 bis 1[cite: 1]
 
     class ViewerState:
         def __init__(self, dataloader, inv_map, mode):
@@ -275,118 +291,72 @@ if __name__ == "__main__":
             if self.batch_idx >= self.batch_size:
                 try:
                     raw_batch = next(self.data_iter)
-                    self.current_batch = data_module.on_after_batch_transfer(
-                        raw_batch, 0
-                    )
+                    self.current_batch = data_module.on_after_batch_transfer(raw_batch, 0)
                     self.batch_idx = 0
                     self.batch_size = self.current_batch[0].shape[0]
                 except StopIteration:
                     self.data_iter = iter(self.dataloader)
                     raw_batch = next(self.data_iter)
-                    self.current_batch = data_module.on_after_batch_transfer(
-                        raw_batch, 0
-                    )
+                    self.current_batch = data_module.on_after_batch_transfer(raw_batch, 0)
                     self.batch_idx = 0
             self.update_plot()
 
         def update_plot(self):
-            holo, label, mask = self.current_batch
+            holo, label, _ = self.current_batch
             idx = self.batch_idx
-            m = mask[idx].squeeze(0).cpu().numpy()
             class_idx = label[idx].item()
             class_name = self.inv_map.get(class_idx, "Unknown")
 
-            if self.mode == "rgb":
-                cl_raw = holo[idx][0].cpu().numpy()
-                cr_raw = holo[idx][1].cpu().numpy()
-                h_cl = cpu_scale_for_plot(cl_raw, False)
-                h_cr = cpu_scale_for_plot(cr_raw, False)
-                h_diff = cpu_scale_for_plot(cl_raw - cr_raw, True)
+            # Lade nur das CL-Hologramm[cite: 1]
+            raw_data = holo[idx][0].cpu().numpy()
+            
+            # Skaliere das CL-Hologramm für den Plot[cite: 1]
+            h_single = cpu_scale_for_plot(raw_data, is_diff=False)
 
-                img_cl.set_data(h_cl)
-                img_cl.set_clim(vmin=h_cl.min(), vmax=h_cl.max())
-                img_cr.set_data(h_cr)
-                img_cr.set_clim(vmin=h_cr.min(), vmax=h_cr.max())
-                img_diff.set_data(h_diff)
-                max_val = max(abs(h_diff.min()), abs(h_diff.max()))
-                img_diff.set_clim(vmin=-max_val, vmax=max_val)
-            else:
-                h_single = cpu_scale_for_plot(
-                    holo[idx][0].cpu().numpy(), is_diff=(self.mode == "diff")
-                )
-                img_single.set_data(h_single)
-                if self.mode == "diff":
-                    max_val = max(abs(h_single.min()), abs(h_single.max()))
-                    img_single.set_clim(vmin=-max_val, vmax=max_val)
-                else:
-                    img_single.set_clim(vmin=h_single.min(), vmax=h_single.max())
+            # Wende exakt einmal IFFT auf das rohe CL-Hologramm an
+            ifft_data = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(raw_data)))
+            
+            # Nimm die Magnitude (Betrag) und skaliere sie mit der gleichen Funktion auf 0 bis 1
+            ifft_mag_scaled = cpu_scale_for_plot(np.abs(ifft_data), is_diff=False)
 
-            img_mask.set_data(m)
-            fig.suptitle(
-                f"Hologram Overview | Class: {class_name}",
-                fontsize=14,
-                fontweight="bold",
-            )
+            # Plots aktualisieren (beide fest auf 0=Schwarz, 1=Weiß)
+            img_single.set_data(h_single)
+            img_single.set_clim(vmin=0, vmax=1)
+
+            img_ifft.set_data(ifft_mag_scaled)
+            img_ifft.set_clim(vmin=0, vmax=1)
+
+            fig.suptitle(f"CL Raw Hologram & 1x IFFT | Class: {class_name}", fontsize=14, fontweight="bold")
             fig.canvas.draw_idle()
 
     viewer = ViewerState(train_loader, inv_label_map, data_module.mode)
-    holo_init, label_init, mask_init_batch = viewer.current_batch
-    mask_init = mask_init_batch[0].squeeze(0).cpu().numpy()
+    holo_init, label_init, _ = viewer.current_batch
     init_class = inv_label_map.get(label_init[0].item(), "Unknown")
 
-    if data_module.mode == "rgb":
-        fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(22, 6))
-        plt.subplots_adjust(bottom=0.25)
+    # Zwei Subplots erstellen
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+    plt.subplots_adjust(bottom=0.25)
 
-        init_cl_raw = holo_init[0][0].cpu().numpy()
-        init_cr_raw = holo_init[0][1].cpu().numpy()
-        init_cl = cpu_scale_for_plot(init_cl_raw, False)
-        init_cr = cpu_scale_for_plot(init_cr_raw, False)
-        init_diff = cpu_scale_for_plot(init_cl_raw - init_cr_raw, True)
+    # Initiale Daten vorbereiten
+    init_raw = holo_init[0][0].cpu().numpy()
+    init_single = cpu_scale_for_plot(init_raw, is_diff=False)
 
-        img_cl = ax1.imshow(init_cl, cmap="viridis")
-        ax1.set_title("Kanal 0: CL")
-        fig.colorbar(img_cl, ax=ax1, fraction=0.046, pad=0.04)
+    init_ifft = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(init_raw)))
+    init_ifft_mag_scaled = cpu_scale_for_plot(np.abs(init_ifft), is_diff=False)
 
-        img_cr = ax2.imshow(init_cr, cmap="viridis")
-        ax2.set_title("Kanal 1: CR")
-        fig.colorbar(img_cr, ax=ax2, fraction=0.046, pad=0.04)
+    # Plot 1: CL Raw Hologramm
+    img_single = ax1.imshow(init_single, cmap="gray", vmin=0, vmax=1)
+    ax1.set_title("CL Raw Hologram")
+    fig.colorbar(img_single, ax=ax1, fraction=0.046, pad=0.04)
 
-        img_diff = ax3.imshow(init_diff, cmap="coolwarm")
-        ax3.set_title("Kanal 2: Diff (CL - CR)")
-        max_init_val = max(abs(init_diff.min()), abs(init_diff.max()))
-        img_diff.set_clim(vmin=-max_init_val, vmax=max_init_val)
-        fig.colorbar(img_diff, ax=ax3, fraction=0.046, pad=0.04)
+    # Plot 2: IFFT Magnitude
+    img_ifft = ax2.imshow(init_ifft_mag_scaled, cmap="gray", vmin=0, vmax=1)
+    ax2.set_title("IFFT (Magnitude)")
+    fig.colorbar(img_ifft, ax=ax2, fraction=0.046, pad=0.04)
 
-        img_mask = ax4.imshow(mask_init, cmap="gray")
-        ax4.set_title("Beamstop Maske")
-        fig.colorbar(img_mask, ax=ax4, fraction=0.046, pad=0.04)
-    else:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-        plt.subplots_adjust(bottom=0.25)
-
-        init_single = cpu_scale_for_plot(
-            holo_init[0][0].cpu().numpy(), is_diff=(data_module.mode == "diff")
-        )
-        cmap = "coolwarm" if data_module.mode == "diff" else "viridis"
-        img_single = ax1.imshow(init_single, cmap=cmap)
-        ax1.set_title("Hologram (RAW)" if data_module.mode == "raw" else "Diff-Holo")
-
-        if data_module.mode == "diff":
-            max_init_val = max(abs(init_single.min()), abs(init_single.max()))
-            img_single.set_clim(vmin=-max_init_val, vmax=max_init_val)
-        else:
-            img_single.set_clim(vmin=init_single.min(), vmax=init_single.max())
-
-        fig.colorbar(img_single, ax=ax1, fraction=0.046, pad=0.04)
-
-        img_mask = ax2.imshow(mask_init, cmap="gray")
-        ax2.set_title("Beamstop Maske")
-        fig.colorbar(img_mask, ax=ax2, fraction=0.046, pad=0.04)
-
-    fig.suptitle(
-        f"Hologram Overview - Class: {init_class}", fontsize=14, fontweight="bold"
-    )
+    fig.suptitle(f"CL Raw Hologram & 1x IFFT | Class: {init_class}", fontsize=14, fontweight="bold")
+    
+    # "Next"-Button Logik[cite: 1]
     ax_button = plt.axes([0.45, 0.05, 0.1, 0.06])
     btn_next = Button(ax_button, "Next")
     btn_next.on_clicked(viewer.next_image)

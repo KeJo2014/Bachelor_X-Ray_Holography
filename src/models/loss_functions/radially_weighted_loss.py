@@ -39,12 +39,11 @@ class RadiallyWeightedLoss(nn.Module):
         if mask is not None:
             valid_pixels = mask.float()
 
-        # noralize weights
+        # normalize weights
         R_valid = R * valid_pixels
         mean_R = R_valid.sum() / (valid_pixels.sum() + 1e-8)
         R_normalized = R / mean_R
 
         weighted_loss = base_loss * R_normalized * valid_pixels
         final_loss = weighted_loss.sum() / (valid_pixels.sum() + 1e-8)
-
         return final_loss

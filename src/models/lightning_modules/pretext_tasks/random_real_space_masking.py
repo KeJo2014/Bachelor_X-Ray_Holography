@@ -17,11 +17,6 @@ class RandomMaskingRealSpaceStrategy(PretextTaskAction):
         """
         Handles the masking strategy, including mask generation, unpatchifying, and loss computation.
         The loss is calculated in real space
-
-        :param img_size: Spatial dimensions of the input image in pixels.
-        :param patch_size: Spatial dimensions of a single image patch.
-        :param mask_ratio: Fraction of patches to be masked during training.
-        :param centrosymmetric: If True, applies a centrosymmetric mask to prevent trivial shortcuts.
         """
         super().__init__(
             img_size=img_size, patch_size=patch_size, mask_ratio=mask_ratio

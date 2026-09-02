@@ -106,7 +106,7 @@ class RandomSimMIMExperiment(AbstractExperiment):
             devices="auto",
             logger=self.mlflow_logger,
             callbacks=[checkpoint_callback, vis_callback, mlflow_callback],
-            precision="16-mixed",  # use half-precision
+            precision="16-mixed",
             accumulate_grad_batches=2,
         )
         trainer.fit(model, datamodule=self.dataloader)
@@ -168,9 +168,7 @@ def main(cfg: DictConfig):
         if current_val_loss is not None:
             best_val_loss = min(best_val_loss, current_val_loss.item())
 
-    if not cfg.get("hyperparameter_optimization_mode", False):
-        experiment.evaluate_model(ModelClass)
-
+    experiment.evaluate_model(ModelClass)
     return best_val_loss
 
 

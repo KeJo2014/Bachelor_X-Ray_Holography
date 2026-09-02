@@ -1,0 +1,20 @@
+model:
+  checkpoint_path: "PATH_TO_YOUR_TRAINED_BACKBONE_MODEL"
+  encoder: 
+    _target_: models.lightning_modules.backbones.mae.LitMAE
+    pretext_strategy: None
+    img_size: 224
+  use_pretrained_dino: false
+  channels: 3
+  name: "TSNE Feature Evaluation"
+
+loglevel: INFO
+mlflow_uri: "sqlite:///mlflow.db"
+mlflow_log_system_metrics: true
+batch_size: 512
+
+datamodule: 
+  _target_: datasets.simulated_dataset.HologramDataModule
+  data_dir: "PATH_TO_YOUR_DATASET_SHARDS_DIRECTORY"
+  mode: "rgb"
+  total_samples: 250000

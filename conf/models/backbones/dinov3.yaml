@@ -1,17 +1,17 @@
-name: "Dinov3 Experiment"
-checkpoint_dir: "C:/Users/kelle/Documents/storage/xray/checkpoints/dinov3/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
+name: "Dinov3 Experiment"  # DO NOT TRAIN WITH DINOv3 model
+checkpoint_dir: "PATH_TO_YOUR_CHECKPOINT_DIRECTORY/backbones/dino_v3/${oc.env:SLURM_JOB_ID, ${now:%Y-%m-%d_%H-%M-%S}}"
 parameters:
   model:
     _target_: models.lightning_modules.backbones.dinov3.Dinov3Backbone
     pretext_strategy:
-      _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy
+      _target_: models.lightning_modules.pretext_tasks.random_masking.RandomMaskingStrategy  # or models.lightning_modules.pretext_tasks.random_real_space_masking.RandomMaskingRealSpaceStrategy
       img_size: 224
       patch_size: 16
-      mask_ratio: 0.5
+      mask_ratio: 0.75
     patch_size: 16
     mask_ratio: 0.75
     lr: 1e-5
     weight_decay: 0.05
     warmup_ratio: 0.05
-    channels: 1
-  num_epochs: 1
+    channels: 3
+  num_epochs: 800
