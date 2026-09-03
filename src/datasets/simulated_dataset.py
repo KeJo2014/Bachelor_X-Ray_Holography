@@ -63,7 +63,7 @@ class HologramDataModule(LightningDataModule):
         total_samples: int,
         batch_size: int = 32,
         num_workers: int = min(
-            0,
+            12,
             max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count() or 1)) - 1),
         ),
         mode: str = "rgb",
