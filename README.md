@@ -6,15 +6,19 @@ This research explores the application of Self-Supervised Learning (SSL) framewo
 ## 🚀 Getting started
 To replicate the experiments detailed in this thesis, please execute the following procedural steps:
 
-### 1. Install Dependencies
+### 1. Prerequisites
+- **Python:** 3.13
+- **Hardware:** NVIDIA GPU supporting CUDA 12.4 (required for GPU acceleration)
+
+### 2. Install Dependencies
 Install all requisite software packages specified within the provided [requirements.txt](requirements.txt) file.
 
 In this work, we employ mlflow to track our experimental results. There are multiple options to run this on your own machine. The easiest solution is to leave the current configuration as is. This will create a local mlflow instance on your machine using an sqlite database. If you want to run experiments in parallel, we strongly advise to setup an mlflow stack as described in the following [guide](misc/documentation/docker_setup.md).
 
-### 2. Experiment configurations
+### 3. Experiment configurations
 Experimental parameters are systematically managed using Hydra. Template configuration files are located in the [conf](/conf/) directory. Researchers should modify these parameters as dictated by specific experimental or dataset requirements.
 
-### 3. Setting Python Path
+### 4. Setting Python Path
 Ensure the environment path is set up correctly by executing `export PYTHONPATH=$PYTHONPATH:./` on Linux-based systems, or `$env:PYTHONPATH = "$env:PYTHONPATH;.\"` in Windows PowerShell within the [src](/src/) directory.
 
 ## 📂 Project structure
@@ -40,7 +44,8 @@ Ensure the environment path is set up correctly by executing `export PYTHONPATH=
 ├── docker
 │   ├── Dockerfile
 │   └── docker-compose.yml
-├── requirements.txt
+├── requirements-core.txt # contains minimal overview of requirements
+├── requirements.txt # completely frozen requirements
 └── src
     ├── datasets
     │   ├── abstract_dataset.py
