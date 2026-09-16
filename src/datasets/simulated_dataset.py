@@ -241,7 +241,7 @@ if __name__ == "__main__":
     import numpy as np
 
     data_path = "C:/Users/kelle/Documents/storage/xray/Raw_holo_sim/reduced2"
-    current_mode = "raw"
+    current_mode = "rgb"
     current_noise = False
 
     data_module = HologramDataModule(
@@ -272,7 +272,7 @@ if __name__ == "__main__":
                 holo = (holo - h_min) / (h_max - h_min)
             else:
                 holo = holo - h_min
-        return holo  # Bringt die Werte auf den Bereich 0 bis 1[cite: 1]
+        return holo
 
     class ViewerState:
         def __init__(self, dataloader, inv_map, mode):
@@ -311,28 +311,28 @@ if __name__ == "__main__":
             idx = self.batch_idx
             class_idx = label[idx].item()
             class_name = self.inv_map.get(class_idx, "Unknown")
+            channels = holo.shape[1]
 
-            # Lade nur das CL-Hologramm[cite: 1]
-            raw_data = holo[idx][0].cpu().numpy()
+            for c in range(channels):
+                is_diff_channel = (self.mode == "rgb" and c == 2) or (
+                    self.mode == "diff"
+                )
 
-            # Skaliere das CL-Hologramm für den Plot[cite: 1]
-            h_single = cpu_scale_for_plot(raw_data, is_diff=False)
+                raw_data = holo[idx][c].cpu().numpy()
 
-            # Wende exakt einmal IFFT auf das rohe CL-Hologramm an
-            ifft_data = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(raw_data)))
+                h_single = cpu_scale_for_plot(raw_data, is_diff=is_diff_channel)
+                ifft_data = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(raw_data)))
+                ifft_mag_scaled = cpu_scale_for_plot(np.abs(ifft_data), is_diff=False)
 
-            # Nimm die Magnitude (Betrag) und skaliere sie mit der gleichen Funktion auf 0 bis 1
-            ifft_mag_scaled = cpu_scale_for_plot(np.abs(ifft_data), is_diff=False)
+                img_raws[c].set_data(h_single)
+                img_iffts[c].set_data(ifft_mag_scaled)
 
-            # Plots aktualisieren (beide fest auf 0=Schwarz, 1=Weiß)
-            img_single.set_data(h_single)
-            img_single.set_clim(vmin=0, vmax=1)
-
-            img_ifft.set_data(ifft_mag_scaled)
-            img_ifft.set_clim(vmin=0, vmax=1)
+                vmin = -1 if is_diff_channel else 0
+                img_raws[c].set_clim(vmin=vmin, vmax=1)
+                img_iffts[c].set_clim(vmin=0, vmax=1)
 
             fig.suptitle(
-                f"CL Raw Hologram & 1x IFFT | Class: {class_name}",
+                f"CL Raw Hologram & IFFT | Class: {class_name}",
                 fontsize=14,
                 fontweight="bold",
             )
@@ -342,35 +342,57 @@ if __name__ == "__main__":
     holo_init, label_init, _ = viewer.current_batch
     init_class = inv_label_map.get(label_init[0].item(), "Unknown")
 
-    # Zwei Subplots erstellen
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-    plt.subplots_adjust(bottom=0.25)
+    channels = holo_init.shape[1]
 
-    # Initiale Daten vorbereiten
-    init_raw = holo_init[0][0].cpu().numpy()
-    init_single = cpu_scale_for_plot(init_raw, is_diff=False)
+    fig, axes = plt.subplots(channels, 2, figsize=(12, 4 * channels))
+    plt.subplots_adjust(bottom=0.15 / channels + 0.05, hspace=0.3)
 
-    init_ifft = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(init_raw)))
-    init_ifft_mag_scaled = cpu_scale_for_plot(np.abs(init_ifft), is_diff=False)
+    if channels == 1:
+        axes = np.expand_dims(axes, axis=0)
 
-    # Plot 1: CL Raw Hologramm
-    img_single = ax1.imshow(init_single, cmap="gray", vmin=0, vmax=1)
-    ax1.set_title("CL Raw Hologram")
-    fig.colorbar(img_single, ax=ax1, fraction=0.046, pad=0.04)
+    img_raws = []
+    img_iffts = []
 
-    # Plot 2: IFFT Magnitude
-    img_ifft = ax2.imshow(init_ifft_mag_scaled, cmap="gray", vmin=0, vmax=1)
-    ax2.set_title("IFFT (Magnitude)")
-    fig.colorbar(img_ifft, ax=ax2, fraction=0.046, pad=0.04)
+    if current_mode == "rgb" and channels == 3:
+        channel_names = ["CL", "CR", "Diff (Magnetic)"]
+    elif current_mode == "diff":
+        channel_names = ["Diff (Magnetic)"]
+    else:
+        channel_names = [f"Channel {c}" for c in range(channels)]
+
+    for c in range(channels):
+        is_diff_channel = (current_mode == "rgb" and c == 2) or (current_mode == "diff")
+
+        init_raw = holo_init[0][c].cpu().numpy()
+        init_single = cpu_scale_for_plot(init_raw, is_diff=is_diff_channel)
+
+        init_ifft = np.fft.ifftshift(np.fft.ifft2(np.fft.fftshift(init_raw)))
+        init_ifft_mag_scaled = cpu_scale_for_plot(np.abs(init_ifft), is_diff=False)
+
+        cmap_raw = "bwr" if is_diff_channel else "gray"
+        vmin_raw = -1 if is_diff_channel else 0
+
+        # plot CL/CR/Diff raw hologram
+        ax_raw = axes[c, 0]
+        img_single = ax_raw.imshow(init_single, cmap=cmap_raw, vmin=vmin_raw, vmax=1)
+        ax_raw.set_title(f"Raw Hologram ({channel_names[c]})")
+        fig.colorbar(img_single, ax=ax_raw, fraction=0.046, pad=0.04)
+        img_raws.append(img_single)
+
+        # plot IFFT magnitude
+        ax_ifft = axes[c, 1]
+        img_ifft = ax_ifft.imshow(init_ifft_mag_scaled, cmap="gray", vmin=0, vmax=1)
+        ax_ifft.set_title(f"IFFT Magnitude ({channel_names[c]})")
+        fig.colorbar(img_ifft, ax=ax_ifft, fraction=0.046, pad=0.04)
+        img_iffts.append(img_ifft)
 
     fig.suptitle(
-        f"CL Raw Hologram & 1x IFFT | Class: {init_class}",
+        f"Hologram & IFFT | Class: {init_class}",
         fontsize=14,
         fontweight="bold",
     )
 
-    # "Next"-Button Logik[cite: 1]
-    ax_button = plt.axes([0.45, 0.05, 0.1, 0.06])
+    ax_button = plt.axes([0.45, 0.02, 0.1, 0.05])
     btn_next = Button(ax_button, "Next")
     btn_next.on_clicked(viewer.next_image)
 
